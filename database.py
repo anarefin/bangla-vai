@@ -51,6 +51,8 @@ class Ticket(Base):
     status = Column(Enum(TicketStatus), default=TicketStatus.OPEN)
     priority = Column(Enum(TicketPriority), default=TicketPriority.MEDIUM)
     category = Column(Enum(TicketCategory), default=TicketCategory.GENERAL)
+    subcategory = Column(String(100), nullable=True)  # Hard-coded subcategory for POC
+    product = Column(String(100), nullable=True)  # Hard-coded product for POC
     customer_name = Column(String(100), nullable=False)
     customer_email = Column(String(100), nullable=True)
     customer_phone = Column(String(20), nullable=True)

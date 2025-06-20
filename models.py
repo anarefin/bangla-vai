@@ -68,6 +68,8 @@ class TicketResponse(BaseModel):
     status: TicketStatusEnum
     priority: TicketPriorityEnum
     category: TicketCategoryEnum
+    subcategory: Optional[str] = None
+    product: Optional[str] = None
     customer_name: str
     customer_email: Optional[str] = None
     customer_phone: Optional[str] = None

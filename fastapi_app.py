@@ -17,6 +17,7 @@ from models import (
     TicketDeleteResponse, TicketSearchRequest, TicketStatsResponse
 )
 from gemini_service import get_gemini_processor
+from intelligent_ticket_processor import get_intelligent_processor
 from datetime import datetime
 from pathlib import Path
 import logging
@@ -450,25 +451,34 @@ async def process_voice_complaint(
         if not bengali_text.strip():
             raise HTTPException(status_code=400, detail="No speech detected in audio")
         
-        # Step 2: Process with AI
+        # Step 2: Process with Intelligent AI Pipeline
+        intelligent_processor = get_intelligent_processor()
+        extracted_data = intelligent_processor.process_bengali_voice_input(bengali_text)
+        
+        # Get enhanced description from Gemini
         gemini = get_gemini_processor()
-        ai_analysis = gemini.process_bengali_complaint(bengali_text)
         enhanced_description = gemini.enhance_ticket_description(
-            ai_analysis["english_translation"],
-            ai_analysis["key_points"]
+            extracted_data["ai_analysis"].get("english_translation", ""),
+            extracted_data["ai_analysis"].get("key_points", [])
         )
         
-        # Step 3: Create ticket
+        # Use the intelligent processor's structured description if available
+        if extracted_data["description"]:
+            enhanced_description = extracted_data["description"]
+        
+        # Step 3: Create ticket with intelligent processing results
         new_ticket = Ticket(
-            title=ai_analysis["title"],
+            title=extracted_data["title"],
             description=enhanced_description,
             bengali_description=bengali_text,
             audio_file_path=saved_file_path,
             customer_name=customer_name,
             customer_email=customer_email,
             customer_phone=customer_phone,
-            category=TicketCategory(ai_analysis["category"]),
-            priority=TicketPriority(ai_analysis["priority"]),
+            category=TicketCategory(extracted_data["category"]),
+            subcategory=extracted_data["subcategory"],
+            product=extracted_data["product"],
+            priority=TicketPriority(extracted_data["priority"]),
             status=TicketStatus.OPEN
         )
         
@@ -485,7 +495,16 @@ async def process_voice_complaint(
                 "language_probability": transcription_result.get('language_probability', 0),
                 "audio_file": saved_file_path
             },
-            "ai_analysis": ai_analysis,
+            "intelligent_analysis": {
+                "category": extracted_data["category"],
+                "subcategory": extracted_data["subcategory"],
+                "priority": extracted_data["priority"],
+                "product": extracted_data["product"],
+                "keywords": extracted_data["keywords"],
+                "sentiment": extracted_data["sentiment"],
+                "urgency_indicators": extracted_data["urgency_indicators"]
+            },
+            "ai_analysis": extracted_data["ai_analysis"],
             "ticket": TicketResponse.from_orm(new_ticket)
         }
         
@@ -658,6 +677,52 @@ async def get_ticket_stats(db: Session = Depends(get_db)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting ticket stats: {str(e)}")
+
+@app.post("/process/intelligent-analysis")
+async def test_intelligent_processing(
+    bengali_text: str = Form(..., description="Bengali text to analyze"),
+):
+    """
+    Test the intelligent processing pipeline with Bengali text
+    
+    This endpoint allows testing the intelligent ticket processor directly
+    with Bengali text input to see the categorization, priority detection,
+    product identification, and description formatting.
+    """
+    try:
+        # Process with intelligent processor
+        intelligent_processor = get_intelligent_processor()
+        extracted_data = intelligent_processor.process_bengali_voice_input(bengali_text)
+        
+        # Import the constants for reference
+        from intelligent_ticket_processor import CATEGORIES, PRIORITIES, PRODUCTS, SUBCATEGORIES
+        
+        return {
+            "success": True,
+            "message": "Text processed successfully with intelligent analysis",
+            "input_text": bengali_text,
+            "extracted_data": {
+                "category": extracted_data["category"],
+                "subcategory": extracted_data["subcategory"],
+                "priority": extracted_data["priority"],
+                "product": extracted_data["product"],
+                "title": extracted_data["title"],
+                "description": extracted_data["description"],
+                "keywords": extracted_data["keywords"],
+                "sentiment": extracted_data["sentiment"],
+                "urgency_indicators": extracted_data["urgency_indicators"]
+            },
+            "ai_analysis": extracted_data["ai_analysis"],
+            "hard_coded_values": {
+                "available_categories": list(CATEGORIES.keys()),
+                "available_priorities": list(PRIORITIES.keys()),
+                "available_products": list(PRODUCTS.keys()),
+                "available_subcategories": {k: v for k, v in SUBCATEGORIES.items()}
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error in intelligent processing: {str(e)}")
 
 @app.post("/save-audio")
 async def save_audio(audio: UploadFile = File(...)):

@@ -1038,30 +1038,42 @@ def main():
                                         
                                         with col2:
                                             st.metric("Category", ticket['category'].replace('_', ' ').title())
+                                            if ticket.get('subcategory'):
+                                                st.metric("Subcategory", ticket['subcategory'])
                                             created_date = datetime.fromisoformat(ticket['created_at'].replace('Z', '+00:00'))
                                             st.metric("Created", created_date.strftime("%Y-%m-%d %H:%M"))
                                         
                                         st.markdown("**Title:**")
                                         st.info(ticket['title'])
                                         
-                                        st.markdown("**Description:**")
-                                        st.write(ticket['description'])
+                                        # Display both Bengali and English descriptions side by side
+                                        st.markdown("### 📝 Complaint Details")
                                         
-                                        if ticket.get('bengali_description'):
-                                            st.markdown("**Bengali Description:**")
-                                            st.write(ticket['bengali_description'])
+                                        # Create tabs for better organization
+                                        desc_tab1, desc_tab2 = st.tabs(["🇧🇩 Bengali Original", "🇺🇸 English Analysis"])
+                                        
+                                        with desc_tab1:
+                                            st.markdown("**Original Bengali Complaint:**")
+                                            if ticket.get('bengali_description'):
+                                                st.text_area("", value=ticket['bengali_description'], height=150, disabled=True, key="bengali_orig_upload")
+                                            else:
+                                                st.info("No Bengali text available")
+                                        
+                                        with desc_tab2:
+                                            st.markdown("**AI-Enhanced English Description:**")
+                                            st.text_area("", value=ticket['description'], height=150, disabled=True, key="english_desc_upload")
                                         
                                         # Show transcription if available
                                         if result.get('transcription'):
+                                            st.markdown("### 🎤 Audio Transcription Details")
                                             transcription_data = result['transcription']
-                                            st.markdown("**Audio Transcription:**")
                                             if isinstance(transcription_data, dict):
                                                 bengali_text = transcription_data.get('bengali_text', '')
-                                                st.text_area("Transcribed Bengali Text", value=bengali_text, height=100, disabled=True)
+                                                st.text_area("Transcribed Bengali Text", value=bengali_text, height=100, disabled=True, key="transcribed_text_upload")
                                                 if transcription_data.get('language_code'):
                                                     st.caption(f"Language: {transcription_data['language_code']} (Confidence: {transcription_data.get('language_probability', 0):.2f})")
                                             else:
-                                                st.text_area("Transcribed Text", value=str(transcription_data), height=100, disabled=True)
+                                                st.text_area("Transcribed Text", value=str(transcription_data), height=100, disabled=True, key="transcribed_raw_upload")
                                         
                                         # Clear the session state
                                         st.session_state.uploaded_audio_file = None
@@ -1331,18 +1343,30 @@ def main():
                                         
                                         with col2:
                                             st.metric("Category", ticket['category'].replace('_', ' ').title())
+                                            if ticket.get('subcategory'):
+                                                st.metric("Subcategory", ticket['subcategory'])
                                             created_date = datetime.fromisoformat(ticket['created_at'].replace('Z', '+00:00'))
                                             st.metric("Created", created_date.strftime("%Y-%m-%d %H:%M"))
                                         
                                         st.markdown("**Title:**")
                                         st.info(ticket['title'])
                                         
-                                        st.markdown("**Description:**")
-                                        st.write(ticket['description'])
+                                        # Display both Bengali and English descriptions side by side
+                                        st.markdown("### 📝 Complaint Details")
                                         
-                                        if ticket.get('bengali_description'):
-                                            st.markdown("**Bengali Description:**")
-                                            st.write(ticket['bengali_description'])
+                                        # Create tabs for better organization
+                                        desc_tab1, desc_tab2 = st.tabs(["🇧🇩 Bengali Original", "🇺🇸 English Analysis"])
+                                        
+                                        with desc_tab1:
+                                            st.markdown("**Original Bengali Complaint:**")
+                                            if ticket.get('bengali_description'):
+                                                st.text_area("", value=ticket['bengali_description'], height=150, disabled=True, key="bengali_orig_record")
+                                            else:
+                                                st.info("No Bengali text available")
+                                        
+                                        with desc_tab2:
+                                            st.markdown("**AI-Enhanced English Description:**")
+                                            st.text_area("", value=ticket['description'], height=150, disabled=True, key="english_desc_record")
                                         
                                         # Clear the form state
                                         st.session_state.show_customer_form = False

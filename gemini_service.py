@@ -19,12 +19,35 @@ class GeminiTicketProcessor:
         # Configure Gemini
         genai.configure(api_key=self.api_key)
         
-        # Initialize the model
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Initialize the model (using latest Gemini 2.5 models)
+        # Try multiple model names for compatibility - prioritize 2.5 over 1.5
+        self.model_names = [
+            'models/gemini-2.5-flash',           # Latest stable 2.5 Flash
+            'models/gemini-2.5-pro',             # Latest stable 2.5 Pro
+            'models/gemini-2.5-flash-preview-05-20', # Preview version
+            'models/gemini-2.0-flash',           # Fallback to 2.0
+            'models/gemini-1.5-flash',           # Fallback to 1.5 if needed
+            'models/gemini-1.5-pro',             # Last resort 1.5
+        ]
+        self.model = None
+        self.model_name = None
+        
+        for model_name in self.model_names:
+            try:
+                self.model = genai.GenerativeModel(model_name)
+                self.model_name = model_name
+                print(f"✅ Successfully initialized Gemini model: {model_name}")
+                break
+            except Exception as e:
+                print(f"❌ Failed to initialize model {model_name}: {str(e)}")
+                continue
+        
+        if not self.model:
+            raise ValueError("❌ No valid Gemini model could be initialized. Check your API key and quota.")
         
         # Initialize LangChain model
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-pro",
+            model=self.model_name,
             google_api_key=self.api_key,
             temperature=0.3
         )
@@ -197,6 +220,19 @@ class GeminiTicketProcessor:
         except Exception as e:
             print(f"Error generating resolution steps: {str(e)}")
             return ["Review complaint details", "Contact customer for clarification", "Escalate if necessary"]
+    
+    def list_available_models(self):
+        """List all available Gemini models for debugging"""
+        try:
+            models = genai.list_models()
+            available_models = []
+            for model in models:
+                if 'generateContent' in model.supported_generation_methods:
+                    available_models.append(model.name)
+            return available_models
+        except Exception as e:
+            print(f"Error listing models: {str(e)}")
+            return []
 
 # Global instance for reuse
 gemini_processor = None
