@@ -59,6 +59,8 @@ This will install:
 export ELEVENLABS_API_KEY=your_actual_api_key_here
 ```
 
+> **⚠️ Security Note**: Never commit your actual `.env` file to Git! It's already excluded in `.gitignore` to keep your API keys safe.
+
 ### Step 5: Prepare Bengali Audio Files
 
 - Ensure your audio files contain clear Bengali speech
