@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import tempfile
-from bengali_stt import BengaliSTT, BengaliTTS
+import requests
 from dotenv import load_dotenv
 import base64
 from io import BytesIO
@@ -9,9 +9,109 @@ import time
 import numpy as np
 import streamlit.components.v1 as components
 import re
+import json
 
 # Load environment variables
 load_dotenv()
+
+# FastAPI base URL - adjust this based on your setup
+FASTAPI_BASE_URL = "http://localhost:8000"
+
+def check_fastapi_connection():
+    """Check if FastAPI server is running"""
+    try:
+        response = requests.get(f"{FASTAPI_BASE_URL}/health", timeout=5)
+        return response.status_code == 200
+    except:
+        return False
+
+def set_api_key(api_key: str):
+    """Set API key in FastAPI server"""
+    try:
+        response = requests.post(
+            f"{FASTAPI_BASE_URL}/config/api-key",
+            data={"api_key": api_key},
+            timeout=10
+        )
+        if response.status_code == 200:
+            return True, "API key configured successfully"
+        else:
+            return False, response.json().get("detail", "Failed to set API key")
+    except Exception as e:
+        return False, f"Error connecting to API server: {str(e)}"
+
+def transcribe_audio_via_api(file_bytes: bytes, filename: str, language: str = "bengali"):
+    """Transcribe audio using FastAPI endpoint"""
+    try:
+        files = {"file": (filename, file_bytes, "audio/mpeg")}
+        data = {"language": language}
+        
+        response = requests.post(
+            f"{FASTAPI_BASE_URL}/stt/transcribe",
+            files=files,
+            data=data,
+            timeout=60  # Longer timeout for transcription
+        )
+        
+        if response.status_code == 200:
+            return True, response.json()
+        else:
+            error_detail = response.json().get("detail", "Unknown error")
+            return False, error_detail
+            
+    except Exception as e:
+        return False, f"Error during transcription: {str(e)}"
+
+def text_to_speech_via_api(text: str, slow: bool = False, return_file: bool = False):
+    """Convert text to speech using FastAPI endpoint"""
+    try:
+        data = {
+            "text": text,
+            "slow": slow,
+            "return_file": return_file
+        }
+        
+        if return_file:
+            response = requests.post(
+                f"{FASTAPI_BASE_URL}/tts/convert",
+                data=data,
+                timeout=30
+            )
+            if response.status_code == 200:
+                return True, response.content  # Return audio bytes
+            else:
+                return False, "Failed to generate speech"
+        else:
+            response = requests.post(
+                f"{FASTAPI_BASE_URL}/tts/convert",
+                data=data,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                return True, response.json()
+            else:
+                error_detail = response.json().get("detail", "Unknown error")
+                return False, error_detail
+                
+    except Exception as e:
+        return False, f"Error during text-to-speech conversion: {str(e)}"
+
+def download_speech_file(timestamp: int):
+    """Download generated speech file by timestamp"""
+    try:
+        response = requests.get(
+            f"{FASTAPI_BASE_URL}/tts/download/{timestamp}",
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return True, response.content
+        else:
+            return False, "File not found"
+            
+    except Exception as e:
+        return False, f"Error downloading file: {str(e)}"
 
 def create_html5_recorder():
     """Create HTML5 audio recorder component"""
@@ -158,7 +258,29 @@ def main():
     )
     
     st.title("🎤 Bangla Vai")
-    st.markdown("### Powered by ElevenLabs Scribe API & Google TTS")
+    st.markdown("### Powered by FastAPI, ElevenLabs Scribe API & Google TTS")
+    
+    # Check FastAPI connection
+    api_connected = check_fastapi_connection()
+    
+    if not api_connected:
+        st.error("🚨 **FastAPI Server Not Running**")
+        st.markdown("""
+        **To start the API server, run this command in your terminal:**
+        ```bash
+        uvicorn fastapi_app:app --reload --host 0.0.0.0 --port 8000
+        ```
+        
+        **Or use this command:**
+        ```bash
+        python fastapi_app.py
+        ```
+        
+        Then refresh this page.
+        """)
+        st.stop()
+    
+    st.success("✅ API Server Connected")
     
     # Sidebar for API key configuration
     with st.sidebar:
@@ -173,10 +295,18 @@ def main():
         )
         
         if api_key:
-            os.environ["ELEVENLABS_API_KEY"] = api_key
-            st.success("✓ API Key configured")
+            if st.button("🔧 Configure API Key"):
+                success, message = set_api_key(api_key)
+                if success:
+                    st.success(f"✓ {message}")
+                else:
+                    st.error(f"❌ {message}")
         else:
             st.warning("⚠️ Please enter your API key for speech-to-text features")
+        
+        st.markdown("---")
+        st.markdown("**API Server Status**: ✅ Connected")
+        st.markdown(f"**Base URL**: `{FASTAPI_BASE_URL}`")
     
     # Create tabs for different features
     tab1, tab2 = st.tabs(["🎙️ Voice Recorder", "📝 Text to Speech"])
@@ -201,47 +331,30 @@ def main():
         if uploaded_file and api_key:
             if st.button("🎯 Transcribe Uploaded Recording", type="primary"):
                 try:
-                    # Create voices directory if it doesn't exist
-                    voices_dir = "voices"
-                    if not os.path.exists(voices_dir):
-                        os.makedirs(voices_dir)
+                    # Get file bytes
+                    file_bytes = uploaded_file.read()
+                    filename = uploaded_file.name
                     
-                    # Generate timestamp for unique filename
-                    timestamp = int(time.time())
-                    file_extension = uploaded_file.name.split(".")[-1]
-                    filename = f"uploaded_audio_{timestamp}.{file_extension}"
-                    file_path = os.path.join(voices_dir, filename)
-                    
-                    # Save uploaded file to voices directory
-                    with open(file_path, "wb") as f:
-                        f.write(uploaded_file.read())
-                    
-                    st.info(f"📁 File saved to: {file_path}")
-                    
-                    # Initialize STT client
-                    stt = BengaliSTT()
+                    st.info(f"📁 Processing file: {filename}")
                     
                     # Show progress
-                    with st.spinner("Transcribing audio... This may take a few moments."):
-                        result = stt.transcribe_audio_file(file_path)
+                    with st.spinner("Transcribing audio via API... This may take a few moments."):
+                        success, result = transcribe_audio_via_api(file_bytes, filename)
                     
-                    # Note: File is kept in voices directory (not deleted)
-                    
-                    if result:
+                    if success:
                         st.success("✅ Transcription completed!")
                         
-                        # Extract transcription text
-                        if 'text' in result:
-                            transcription_text = result['text']
-                        elif 'transcription' in result:
-                            transcription_text = result['transcription']
-                        else:
-                            transcription_text = str(result)
-                        
-                        # Display language detection information
+                        # Extract transcription text and other info
+                        transcription_text = result.get('transcription', '')
                         detected_lang = result.get('language_code', 'unknown')
                         lang_probability = result.get('language_probability', 0)
+                        saved_filename = result.get('saved_as', 'Unknown')
+                        saved_path = result.get('saved_path', 'Unknown')
                         
+                        # Display file save information
+                        st.info(f"📁 **File saved as:** `{saved_filename}` in voices folder")
+                        
+                        # Display language detection information
                         col1, col2 = st.columns(2)
                         with col1:
                             st.info(f"**Detected Language:** {detected_lang}")
@@ -277,8 +390,12 @@ def main():
                             file_name=f"transcription_{int(time.time())}.txt",
                             mime="text/plain"
                         )
+                        
+                        # Show full API response in expander
+                        with st.expander("🔍 View Full API Response"):
+                            st.json(result)
                     else:
-                        st.error("❌ Transcription failed. Please try again.")
+                        st.error(f"❌ Transcription failed: {result}")
                         
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
@@ -295,13 +412,13 @@ def main():
         4. ⏹️ Click **STOP RECORDING** when done
         5. 🎧 Listen to your recording (audio player will appear)
         6. 💾 Click **DOWNLOAD RECORDING** to save the file
-        7. 📤 Upload the downloaded file in the "Upload Audio" tab for transcription
+        7. 📤 Upload the downloaded file in the "Upload Audio" section for transcription
         """)
 
     # Tab 2: Text to Speech
     with tab2:
         st.header("📝 Bengali Text to Speech")
-        st.markdown("Enter Bengali text and convert it to speech.")
+        st.markdown("Enter Bengali text and convert it to speech using the API.")
         
         # Text input
         bengali_text = st.text_area(
@@ -322,40 +439,49 @@ def main():
                 # Convert to speech button
                 if st.button("🔊 Convert to Speech", type="primary"):
                     try:
-                        # Initialize TTS client
-                        tts = BengaliTTS()
+                        with st.spinner("Converting text to speech via API..."):
+                            # First get metadata
+                            success, result = text_to_speech_via_api(bengali_text, slow=slow_speech, return_file=False)
                         
-                        with st.spinner("Converting text to speech..."):
-                            # Generate speech
-                            timestamp = int(time.time())
-                            output_filename = f"bengali_speech_{timestamp}.mp3"
-                            audio_path = tts.text_to_speech(bengali_text, output_filename, slow=slow_speech)
-                        
-                        if audio_path and os.path.exists(audio_path):
+                        if success:
                             st.success("✅ Speech generated successfully!")
                             
-                            # Play audio
-                            with open(audio_path, "rb") as audio_file:
-                                audio_bytes = audio_file.read()
-                                st.audio(audio_bytes, format='audio/mp3')
+                            # Get the timestamp for downloading
+                            timestamp = result.get('timestamp')
                             
-                            # Download button
-                            st.download_button(
-                                label="📥 Download Speech Audio",
-                                data=audio_bytes,
-                                file_name=output_filename,
-                                mime="audio/mp3"
-                            )
-                            
-                            # Also provide text download
-                            st.download_button(
-                                label="📄 Download Text File",
-                                data=bengali_text,
-                                file_name=f"bengali_text_{timestamp}.txt",
-                                mime="text/plain"
-                            )
+                            if timestamp:
+                                # Download the audio file
+                                download_success, audio_bytes = download_speech_file(timestamp)
+                                
+                                if download_success:
+                                    # Play audio
+                                    st.audio(audio_bytes, format='audio/mp3')
+                                    
+                                    # Download button
+                                    st.download_button(
+                                        label="📥 Download Speech Audio",
+                                        data=audio_bytes,
+                                        file_name=f"bengali_speech_{timestamp}.mp3",
+                                        mime="audio/mp3"
+                                    )
+                                    
+                                    # Also provide text download
+                                    st.download_button(
+                                        label="📄 Download Text File",
+                                        data=bengali_text,
+                                        file_name=f"bengali_text_{timestamp}.txt",
+                                        mime="text/plain"
+                                    )
+                                    
+                                    # Show API response details
+                                    with st.expander("🔍 View API Response"):
+                                        st.json(result)
+                                else:
+                                    st.error(f"❌ Failed to download audio: {audio_bytes}")
+                            else:
+                                st.error("❌ No timestamp received from API")
                         else:
-                            st.error("❌ Speech generation failed. Please try again.")
+                            st.error(f"❌ Speech generation failed: {result}")
                             
                     except Exception as e:
                         st.error(f"An error occurred: {e}")
@@ -364,8 +490,8 @@ def main():
     # Footer
     st.markdown("---")
     st.markdown(
-        "💡 **Note:** This application supports Bengali voice recording, text-to-speech conversion, and speech recognition. "
-        "ElevenLabs API key is required only for speech-to-text features."
+        "💡 **Note:** This application uses FastAPI endpoints for Bengali voice recording, text-to-speech conversion, and speech recognition. "
+        "Make sure the FastAPI server is running and ElevenLabs API key is configured for speech-to-text features."
     )
 
 if __name__ == "__main__":

@@ -1,215 +1,192 @@
-# Bengali Speech-to-Text with ElevenLabs Scribe API
+# Bangla Vai - Bengali Speech Processing API
 
-A Python application that converts Bengali speech to text using ElevenLabs Scribe API (free tier). The application includes both a command-line interface and a web-based Streamlit interface.
+A comprehensive Bengali speech-to-text and text-to-speech application with FastAPI backend and Streamlit frontend.
 
-## Features
+## 🚀 Architecture
 
-- 🎤 Bengali speech-to-text transcription
-- 🌐 Web interface using Streamlit
-- 💻 Command-line interface
-- 📁 Support for multiple audio formats (MP3, WAV, M4A, OGG, FLAC)
-- 💾 Save transcriptions to text files
-- 🆓 Uses ElevenLabs free tier
-
-## Prerequisites
-
-- Python 3.7 or higher
-- ElevenLabs account with API key
-- Audio files containing Bengali speech
-
-## Step-by-Step Setup Instructions
-
-### Step 1: Get ElevenLabs API Key
-
-1. Visit [ElevenLabs](https://elevenlabs.io/) and create a free account
-2. After signing up, go to your profile/settings
-3. Find and copy your API key
-4. The free tier includes speech-to-text capabilities
-
-### Step 2: Clone or Download the Project
-
-If you're starting fresh, make sure you have all the project files in your directory.
-
-### Step 3: Install Dependencies
-
-```bash
-pip install -r requirements.txt
+```
+┌─────────────────┐    HTTP API    ┌─────────────────┐
+│   Streamlit     │◄──────────────►│   FastAPI       │
+│   Frontend      │    /stt/       │   Backend       │
+│   (Port 8501)   │    /tts/       │   (Port 8000)   │
+└─────────────────┘                └─────────────────┘
 ```
 
-This will install:
-- `requests` - For API calls to ElevenLabs
-- `pydub` - For audio file handling
-- `streamlit` - For the web interface
-- `python-dotenv` - For environment variable management
+- **FastAPI Backend**: RESTful API with automatic documentation
+- **Streamlit Frontend**: Modern web interface for user interaction
+- **ElevenLabs Scribe API**: High-quality Bengali speech-to-text
+- **Google TTS**: Natural Bengali text-to-speech conversion
 
-### Step 4: Configure API Key
+## ✨ Features
 
-**Option A: Using .env file (Recommended)**
-1. Copy the example environment file:
+- 🎤 **Voice Recording**: Record audio directly in browser
+- 🎯 **Speech-to-Text**: Convert Bengali audio to text
+- 📝 **Text-to-Speech**: Convert Bengali text to natural speech
+- 🌐 **REST API**: Full-featured API with automatic documentation
+- 📥 **Download Options**: Download transcriptions and audio files
+- 📊 **Health Monitoring**: API health checks and status monitoring
+
+## 📋 Prerequisites
+
+- Python 3.8 or higher
+- ElevenLabs API key (for speech-to-text functionality)
+- Modern web browser with microphone access
+
+## 🛠️ Installation
+
+1. **Clone and setup**:
    ```bash
-   cp .env.example .env
-   ```
-2. Edit the `.env` file and add your API key:
-   ```
-   ELEVENLABS_API_KEY=your_actual_api_key_here
+   git clone <repository-url>
+   cd bangla-vai
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
    ```
 
-**Option B: Set environment variable directly**
+2. **Set up environment variables** (optional):
+   ```bash
+   echo "ELEVENLABS_API_KEY=your_elevenlabs_api_key_here" > .env
+   ```
+
+## 🚀 Quick Start
+
+### Option 1: Easy Start (Recommended)
 ```bash
-export ELEVENLABS_API_KEY=your_actual_api_key_here
+python start_api.py
 ```
 
-> **⚠️ Security Note**: Never commit your actual `.env` file to Git! It's already excluded in `.gitignore` to keep your API keys safe.
+### Option 2: Manual Start
+```bash
+# Terminal 1: Start FastAPI server
+uvicorn fastapi_app:app --reload --host 0.0.0.0 --port 8000
 
-### Step 5: Prepare Bengali Audio Files
+# Terminal 2: Start Streamlit app  
+streamlit run streamlit_app.py
+```
 
-- Ensure your audio files contain clear Bengali speech
-- Supported formats: MP3, WAV, M4A, OGG, FLAC
-- Better audio quality = better transcription accuracy
+## 🌐 Access Points
 
-## Usage Instructions
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Streamlit App** | http://localhost:8501 | User Interface |
+| **FastAPI Docs** | http://localhost:8000/docs | API Documentation |
+| **Health Check** | http://localhost:8000/health | Server Status |
 
-### Method 1: Command Line Interface
+## 📚 API Endpoints
 
-1. Run the main script:
-   ```bash
-   python bengali_stt.py
-   ```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check endpoint |
+| POST | `/stt/transcribe` | Upload audio file for Bengali transcription |
+| POST | `/tts/convert` | Convert Bengali text to speech |
+| GET | `/tts/download/{timestamp}` | Download generated speech file |
+| POST | `/config/api-key` | Configure ElevenLabs API key |
 
-2. When prompted, enter the path to your Bengali audio file:
-   ```
-   Enter the path to your Bengali audio file: /path/to/your/bengali_audio.mp3
-   ```
+### Quick API Testing
 
-3. The program will:
-   - Upload your audio file to ElevenLabs
-   - Process the transcription
-   - Display the Bengali text result
-   - Optionally save the result to a text file
+```bash
+# Configure API key
+curl -X POST "http://localhost:8000/config/api-key" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "api_key=your_elevenlabs_api_key"
 
-### Method 2: Web Interface (Streamlit)
+# Test speech-to-text
+curl -X POST "http://localhost:8000/stt/transcribe" \
+  -F "file=@your_audio.wav" \
+  -F "language=bengali"
 
-1. Start the Streamlit app:
-   ```bash
-   streamlit run streamlit_app.py
-   ```
+# Test text-to-speech
+curl -X POST "http://localhost:8000/tts/convert" \
+  -d "text=আমি বাংলায় কথা বলছি&slow=false"
+```
 
-2. Open your browser and go to the displayed URL (usually `http://localhost:8501`)
+## 🎯 Usage
 
-3. In the web interface:
-   - Enter your ElevenLabs API key in the sidebar (if not set in .env)
-   - Upload a Bengali audio file using the file uploader
-   - Click "Transcribe Audio" button
-   - View and download the transcription result
+1. **Start the servers** using `python start_api.py`
+2. **Open browser** to http://localhost:8501
+3. **Configure API key** in sidebar
+4. **Record/upload audio** for transcription or **enter text** for speech generation
+5. **Download results**
 
-## File Structure
+## 📁 Project Structure
 
 ```
 bangla-vai/
-├── requirements.txt          # Python dependencies
-├── .env.example             # Environment variables template
-├── bengali_stt.py          # Main CLI application
-├── streamlit_app.py        # Web interface
-└── README.md               # This file
+├── fastapi_app.py          # FastAPI backend server
+├── streamlit_app.py        # Streamlit frontend interface  
+├── bengali_stt.py          # Core Bengali STT and TTS classes
+├── start_api.py            # Helper script to start servers
+├── requirements.txt        # Python dependencies
+├── voices/                 # Audio files storage (auto-created)
+└── venv/                   # Virtual environment
 ```
 
-## Example Usage
-
-### Command Line Example
-
-```bash
-$ python bengali_stt.py
-=== Bengali Speech-to-Text with ElevenLabs Scribe API ===
-
-✓ ElevenLabs Scribe API client initialized successfully
-
-Enter the path to your Bengali audio file: my_bengali_audio.mp3
-Uploading and transcribing 'my_bengali_audio.mp3'...
-This may take a few moments...
-
-==================================================
-TRANSCRIPTION RESULT:
-==================================================
-আমি বাংলায় কথা বলছি। এটি একটি পরীক্ষা।
-==================================================
-
-Do you want to save the transcription to a file? (y/n): y
-Enter output filename (default: bengali_transcription.txt): 
-Transcription saved to 'bengali_transcription.txt'
-```
-
-## API Limits and Pricing
-
-- **Free Tier**: ElevenLabs provides free credits for speech-to-text
-- **Rate Limits**: Check ElevenLabs documentation for current limits
-- **File Size**: Depends on your plan (free tier has size limitations)
-
-## Troubleshooting
+## ⚠️ Troubleshooting
 
 ### Common Issues
 
-1. **API Key Error**
+1. **"FastAPI Server Not Running"**
+   ```bash
+   python start_api.py
    ```
-   ValueError: ELEVENLABS_API_KEY not found in environment variables
+
+2. **"API Connection Failed"**
+   ```bash
+   curl http://localhost:8000/health
    ```
-   **Solution**: Make sure your API key is properly set in the `.env` file or environment variable.
 
-2. **File Not Found Error**
-   ```
-   Error: Audio file 'filename.mp3' not found
-   ```
-   **Solution**: Check the file path and ensure the audio file exists.
+3. **API Key Issues**
+   - Set via environment variable: `ELEVENLABS_API_KEY=your_key`
+   - Or configure through the web interface
 
-3. **API Request Failed**
-   ```
-   Error: API request failed with status code 401
-   ```
-   **Solution**: Verify your API key is correct and has sufficient credits.
+### Testing Commands
 
-4. **Unsupported Audio Format**
-   **Solution**: Convert your audio to one of the supported formats (MP3, WAV, M4A, OGG, FLAC).
+```bash
+# Check server status
+curl http://localhost:8000/health
 
-### Audio Quality Tips
+# View API documentation
+open http://localhost:8000/docs
 
-- Use clear, high-quality audio recordings
-- Minimize background noise
-- Ensure the speaker speaks clearly in Bengali
-- Avoid overlapping voices or multiple speakers
-
-## Advanced Usage
-
-### Custom Language Settings
-
-You can modify the language parameter in the code:
-
-```python
-result = stt.transcribe_audio_file(audio_file_path, language="bengali")
+# Check if port is in use
+lsof -i :8000
 ```
 
-### Batch Processing
+## 🚀 Production Deployment
 
-To process multiple files, you can modify the main script to loop through a directory of audio files.
+### Docker Deployment
+```dockerfile
+FROM python:3.9-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 8000 8501
+CMD uvicorn fastapi_app:app --host 0.0.0.0 --port 8000 & \
+    streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+```
 
-## Contributing
+### Environment Variables
+```bash
+export ELEVENLABS_API_KEY="your_production_key"
+export FASTAPI_BASE_URL="https://your-domain.com"
+```
 
-Feel free to contribute to this project by:
-- Reporting bugs
-- Suggesting new features
-- Improving documentation
-- Adding support for other languages
+## 🔧 Configuration
 
-## License
+- **Audio Formats**: WAV, MP3, OGG, M4A, WebM
+- **Languages**: Bengali (primary), other languages supported
+- **API Documentation**: Auto-generated at `/docs` and `/redoc`
+- **CORS**: Enabled for cross-origin requests
 
-This project is open source. Please check ElevenLabs' terms of service for API usage guidelines.
+## 🆘 Support
 
-## Support
+- **Interactive API Testing**: http://localhost:8000/docs
+- **Health Monitoring**: http://localhost:8000/health
+- **GitHub Issues**: For bugs and feature requests
 
-If you encounter issues:
-1. Check the troubleshooting section above
-2. Verify your ElevenLabs API key and credits
-3. Ensure your audio file is in a supported format
-4. Check the ElevenLabs API documentation for any updates
+## 🙏 Acknowledgments
 
----
-
-**Happy transcribing! 🎤➡️📝** 
+- **ElevenLabs**: High-quality speech recognition API
+- **Google**: Text-to-Speech services
+- **FastAPI & Streamlit**: Excellent web frameworks 
