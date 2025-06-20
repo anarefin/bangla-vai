@@ -1,192 +1,299 @@
-# Bangla Vai - Bengali Speech Processing API
+# 🎫 Bangla Vai - Voice Ticketing System
 
-A comprehensive Bengali speech-to-text and text-to-speech application with FastAPI backend and Streamlit frontend.
-
-## 🚀 Architecture
-
-```
-┌─────────────────┐    HTTP API    ┌─────────────────┐
-│   Streamlit     │◄──────────────►│   FastAPI       │
-│   Frontend      │    /stt/       │   Backend       │
-│   (Port 8501)   │    /tts/       │   (Port 8000)   │
-└─────────────────┘                └─────────────────┘
-```
-
-- **FastAPI Backend**: RESTful API with automatic documentation
-- **Streamlit Frontend**: Modern web interface for user interaction
-- **ElevenLabs Scribe API**: High-quality Bengali speech-to-text
-- **Google TTS**: Natural Bengali text-to-speech conversion
+An AI-powered Bengali voice-to-ticket support system that converts Bengali speech complaints into structured support tickets using advanced speech recognition and natural language processing.
 
 ## ✨ Features
 
-- 🎤 **Voice Recording**: Record audio directly in browser
-- 🎯 **Speech-to-Text**: Convert Bengali audio to text
-- 📝 **Text-to-Speech**: Convert Bengali text to natural speech
-- 🌐 **REST API**: Full-featured API with automatic documentation
-- 📥 **Download Options**: Download transcriptions and audio files
-- 📊 **Health Monitoring**: API health checks and status monitoring
+### 🎤 Voice Processing
+- **Bengali Speech-to-Text**: Convert Bengali audio to text using ElevenLabs Scribe API
+- **Real-time Recording**: Browser-based voice recording with HTML5
+- **Multiple Audio Formats**: Support for WAV, MP3, OGG, M4A, WebM
 
-## 📋 Prerequisites
+### 🤖 AI-Powered Analysis
+- **Gemini AI Integration**: Intelligent processing of Bengali complaints
+- **Automatic Translation**: Bengali to English translation
+- **Smart Categorization**: Automatic classification (technical, billing, general, complaint, feature_request)
+- **Priority Detection**: Intelligent priority assignment (low, medium, high, urgent)
+- **Sentiment Analysis**: Customer sentiment detection
 
-- Python 3.8 or higher
-- ElevenLabs API key (for speech-to-text functionality)
-- Modern web browser with microphone access
+### 🎫 Ticketing System
+- **Complete CRUD Operations**: Create, read, update, delete tickets
+- **Advanced Filtering**: Filter by status, priority, category, customer
+- **Real-time Analytics**: Dashboard with statistics and visualizations
+- **Voice Ticket Linking**: Direct connection between audio files and tickets
 
-## 🛠️ Installation
+### 📊 Analytics & Management
+- **Interactive Dashboard**: Comprehensive ticket overview
+- **Visual Analytics**: Charts and graphs for ticket statistics
+- **Ticket Management**: Update status, priority, assignments
+- **Customer Information**: Complete customer contact details
 
-1. **Clone and setup**:
-   ```bash
-   git clone <repository-url>
-   cd bangla-vai
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+## 🛠️ Technology Stack
 
-2. **Set up environment variables** (optional):
-   ```bash
-   echo "ELEVENLABS_API_KEY=your_elevenlabs_api_key_here" > .env
-   ```
+- **Backend**: FastAPI, SQLAlchemy, SQLite/PostgreSQL
+- **Frontend**: Streamlit with modern UI components
+- **AI/ML**: Google Gemini Pro, LangChain
+- **Speech Processing**: ElevenLabs Scribe API, Google TTS
+- **Visualization**: Plotly, Pandas
+- **Audio Processing**: HTML5 MediaRecorder, Pydub
 
 ## 🚀 Quick Start
 
-### Option 1: Easy Start (Recommended)
+### Prerequisites
+- Python 3.8+
+- ElevenLabs API Key (for speech-to-text)
+- Google API Key (for Gemini AI)
+
+### 1. Installation
+
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd bangla-vai
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Environment Setup
+
+Create a `.env` file in the project root:
+
+```env
+# ElevenLabs API Key (Required for speech-to-text)
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+
+# Google API Key (Required for AI analysis)
+GOOGLE_API_KEY=your_google_gemini_api_key_here
+
+# Database URL (Optional - defaults to SQLite)
+DATABASE_URL=sqlite:///./tickets.db
+```
+
+### 3. Initialize Database
+
+```bash
+# Create database tables
+python database.py
+```
+
+### 4. Start the System
+
+**Single Command Startup (Recommended):**
+```bash
+# Start both FastAPI backend and Streamlit frontend
 python start_api.py
 ```
 
-### Option 2: Manual Start
+**Alternative - Manual Startup:**
 ```bash
 # Terminal 1: Start FastAPI server
-uvicorn fastapi_app:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn fastapi_app:app --reload --host 0.0.0.0 --port 8000
 
-# Terminal 2: Start Streamlit app  
-streamlit run streamlit_app.py
+# Terminal 2: Start Streamlit interface  
+streamlit run streamlit_ticketing_app.py
 ```
 
-## 🌐 Access Points
+### 5. Access the Application
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| **Streamlit App** | http://localhost:8501 | User Interface |
-| **FastAPI Docs** | http://localhost:8000/docs | API Documentation |
-| **Health Check** | http://localhost:8000/health | Server Status |
+- **🎨 Frontend (Streamlit)**: http://localhost:8501
+- **🔧 Backend API Docs**: http://localhost:8000/docs
+- **💚 Health Check**: http://localhost:8000/health
 
-## 📚 API Endpoints
+## 📱 Quick Usage Guide
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check endpoint |
-| POST | `/stt/transcribe` | Upload audio file for Bengali transcription |
-| POST | `/tts/convert` | Convert Bengali text to speech |
-| GET | `/tts/download/{timestamp}` | Download generated speech file |
-| POST | `/config/api-key` | Configure ElevenLabs API key |
+1. **Run the startup script**: `python start_api.py`
+2. **Open your browser** to http://localhost:8501
+3. **Configure API keys** in the Streamlit sidebar
+4. **Record a Bengali complaint** using the voice recorder
+5. **Click "Check for New Recording"** to activate the recording
+6. **Click "CREATE TICKET FROM RECORDING"** to start ticket creation
+7. **Fill customer information** and submit to create the ticket
 
-### Quick API Testing
+## 📱 How to Use
 
-```bash
-# Configure API key
-curl -X POST "http://localhost:8000/config/api-key" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "api_key=your_elevenlabs_api_key"
+### Creating Voice Tickets
 
-# Test speech-to-text
-curl -X POST "http://localhost:8000/stt/transcribe" \
-  -F "file=@your_audio.wav" \
-  -F "language=bengali"
+1. **Configure API Keys**: Enter your ElevenLabs and Google API keys in the sidebar
+2. **Customer Information**: Fill in customer name (required), email, and phone
+3. **Record Complaint**: 
+   - Click "START RECORDING"
+   - Speak your complaint in Bengali
+   - Click "STOP RECORDING"
+   - Download the audio file
+4. **Upload & Process**: Upload the audio file and click "Process Voice Complaint"
+5. **Review Results**: Check transcription, AI analysis, and generated ticket
 
-# Test text-to-speech
-curl -X POST "http://localhost:8000/tts/convert" \
-  -d "text=আমি বাংলায় কথা বলছি&slow=false"
-```
+### Managing Tickets
 
-## 🎯 Usage
+1. **Dashboard**: View all tickets with filtering options
+2. **Analytics**: Monitor ticket statistics and trends
+3. **Management**: Update ticket status, priority, and assignments
+4. **Search**: Find tickets by various criteria
 
-1. **Start the servers** using `python start_api.py`
-2. **Open browser** to http://localhost:8501
-3. **Configure API key** in sidebar
-4. **Record/upload audio** for transcription or **enter text** for speech generation
-5. **Download results**
+## 🔧 API Endpoints
 
-## 📁 Project Structure
+### Speech Processing
+- `POST /stt/transcribe` - Transcribe Bengali audio
+- `POST /tts/convert` - Convert Bengali text to speech
+- `POST /config/api-key` - Configure ElevenLabs API key
 
-```
-bangla-vai/
-├── fastapi_app.py          # FastAPI backend server
-├── streamlit_app.py        # Streamlit frontend interface  
-├── bengali_stt.py          # Core Bengali STT and TTS classes
-├── start_api.py            # Helper script to start servers
-├── requirements.txt        # Python dependencies
-├── voices/                 # Audio files storage (auto-created)
-└── venv/                   # Virtual environment
-```
+### Ticket Management
+- `POST /tickets/create` - Create new ticket
+- `POST /tickets/voice-to-ticket` - Create ticket from voice
+- `POST /process/voice-complaint` - Complete voice-to-ticket pipeline
+- `GET /tickets` - List tickets with filters
+- `GET /tickets/{id}` - Get specific ticket
+- `PUT /tickets/{id}` - Update ticket
+- `DELETE /tickets/{id}` - Delete ticket
+- `GET /tickets/stats` - Get ticket statistics
 
-## ⚠️ Troubleshooting
+## 📊 Database Schema
 
-### Common Issues
+### Ticket Table
+- `id`: Primary key
+- `title`: Ticket title (auto-generated from AI)
+- `description`: Enhanced description
+- `bengali_description`: Original Bengali text
+- `audio_file_path`: Path to voice recording
+- `status`: open, in_progress, resolved, closed
+- `priority`: low, medium, high, urgent
+- `category`: technical, billing, general, complaint, feature_request
+- `customer_name`: Customer name
+- `customer_email`: Customer email
+- `customer_phone`: Customer phone
+- `assigned_to`: Assigned team member
+- `created_at`: Creation timestamp
+- `updated_at`: Last update timestamp
+- `resolved_at`: Resolution timestamp
 
-1. **"FastAPI Server Not Running"**
-   ```bash
-   python start_api.py
-   ```
+## 🎯 Use Cases
 
-2. **"API Connection Failed"**
-   ```bash
-   curl http://localhost:8000/health
-   ```
+### Customer Support Centers
+- Handle Bengali-speaking customers efficiently
+- Automatic ticket creation from voice complaints
+- Prioritize urgent issues automatically
+- Track resolution metrics
 
-3. **API Key Issues**
-   - Set via environment variable: `ELEVENLABS_API_KEY=your_key`
-   - Or configure through the web interface
+### Government Services
+- Process citizen complaints in Bengali
+- Categorize issues automatically
+- Generate reports and analytics
+- Improve service delivery
 
-### Testing Commands
+### E-commerce Platforms
+- Handle customer complaints in local language
+- Automatic issue categorization
+- Priority-based resolution workflow
+- Customer satisfaction tracking
 
-```bash
-# Check server status
-curl http://localhost:8000/health
+## 🔒 Security & Privacy
 
-# View API documentation
-open http://localhost:8000/docs
+- API keys stored securely in environment variables
+- Audio files stored locally with secure paths
+- Database supports encryption (PostgreSQL recommended for production)
+- No sensitive data logged in plain text
 
-# Check if port is in use
-lsof -i :8000
-```
+## 🚀 Deployment
 
-## 🚀 Production Deployment
+### Production Considerations
+- Use PostgreSQL for database
+- Configure proper CORS settings
+- Set up SSL/TLS certificates
+- Use environment variables for all secrets
+- Configure proper logging
+- Set up monitoring and alerts
 
-### Docker Deployment
+### Docker Deployment (Optional)
+
 ```dockerfile
+# Dockerfile example
 FROM python:3.9-slim
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
+
 COPY . .
 EXPOSE 8000 8501
-CMD uvicorn fastapi_app:app --host 0.0.0.0 --port 8000 & \
-    streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+
+CMD ["python", "start_api.py"]
 ```
 
-### Environment Variables
-```bash
-export ELEVENLABS_API_KEY="your_production_key"
-export FASTAPI_BASE_URL="https://your-domain.com"
-```
+## 🤝 Contributing
 
-## 🔧 Configuration
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-- **Audio Formats**: WAV, MP3, OGG, M4A, WebM
-- **Languages**: Bengali (primary), other languages supported
-- **API Documentation**: Auto-generated at `/docs` and `/redoc`
-- **CORS**: Enabled for cross-origin requests
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🆘 Support
 
-- **Interactive API Testing**: http://localhost:8000/docs
-- **Health Monitoring**: http://localhost:8000/health
-- **GitHub Issues**: For bugs and feature requests
+### Common Issues
 
-## 🙏 Acknowledgments
+1. **API Key Errors**
+   - Ensure ElevenLabs and Google API keys are valid
+   - Check API quotas and billing status
 
-- **ElevenLabs**: High-quality speech recognition API
-- **Google**: Text-to-Speech services
-- **FastAPI & Streamlit**: Excellent web frameworks 
+2. **Audio Recording Issues**
+   - Allow microphone permissions in browser
+   - Use HTTPS for production (required for MediaRecorder)
+
+3. **Database Issues**
+   - Run `python database.py` to initialize tables
+   - Check database permissions
+
+4. **Import Errors**
+   - Ensure all dependencies are installed: `pip install -r requirements.txt`
+   - Activate virtual environment
+
+### Getting Help
+
+- Check the FastAPI documentation at `/docs`
+- Review server logs for error details
+- Ensure all environment variables are set correctly
+
+### Testing the System
+
+```bash
+# Test API health
+curl http://localhost:8000/health
+
+# Test voice processing endpoint
+curl -X POST "http://localhost:8000/process/voice-complaint" \
+  -F "file=@test_audio.wav" \
+  -F "customer_name=John Doe" \
+  -F "customer_email=john@example.com"
+
+# Test ticket creation
+curl -X POST "http://localhost:8000/tickets/create" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Test Ticket",
+    "description": "Test Description",
+    "customer_name": "Test Customer",
+    "category": "general",
+    "priority": "medium"
+  }'
+```
+
+## 🎉 Acknowledgments
+
+- ElevenLabs for speech-to-text API
+- Google for Gemini AI
+- Streamlit community for UI framework
+- FastAPI for the backend framework
+- LangChain for AI orchestration
+
+---
+
+**Ready to transform your customer support with AI-powered Bengali voice processing!** 🚀 

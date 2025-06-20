@@ -6,4 +6,14 @@ gTTS==2.4.0
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
-aiofiles==23.2.1 
+aiofiles==23.2.1
+# New dependencies for ticketing system
+google-generativeai>=0.3.2
+langchain>=0.1.0
+langchain-google-genai>=0.0.5
+sqlalchemy>=2.0.23
+pydantic>=2.5.0
+# Additional dependencies for Streamlit interface
+pandas>=2.2.0
+plotly>=5.17.0
+email-validator>=2.1.0 

@@ -1,22 +1,36 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import tempfile
 import time
 import json
-from typing import Optional
+from typing import Optional, List
 from bengali_stt import BengaliSTT, BengaliTTS
 from dotenv import load_dotenv
 import aiofiles
+from sqlalchemy.orm import Session
+from database import get_db, create_tables, Ticket, TicketStatus, TicketPriority, TicketCategory
+from models import (
+    TicketCreateRequest, TicketResponse, TicketListResponse, TicketCreateResponse,
+    VoiceTicketRequest, VoiceProcessingResponse, TicketUpdateRequest, TicketUpdateResponse,
+    TicketDeleteResponse, TicketSearchRequest, TicketStatsResponse
+)
+from gemini_service import get_gemini_processor
+from datetime import datetime
+from pathlib import Path
+import logging
 
 # Load environment variables
 load_dotenv()
 
+# Create database tables
+create_tables()
+
 app = FastAPI(
-    title="Bangla Vai API",
-    description="Bengali Speech-to-Text and Text-to-Speech API",
-    version="1.0.0"
+    title="Bangla Vai Ticketing API",
+    description="Bengali Voice-to-Ticket System with Speech Processing and AI Analysis",
+    version="2.0.0"
 )
 
 # Add CORS middleware to allow requests from Streamlit
@@ -44,15 +58,26 @@ def get_tts_client():
 async def root():
     """Root endpoint with API information"""
     return {
-        "message": "Bangla Vai API - Bengali Speech Processing",
-        "version": "1.0.0",
+        "message": "Bangla Vai Ticketing API - Bengali Voice-to-Ticket System",
+        "version": "2.0.0",
         "endpoints": {
+            # Speech processing endpoints
             "transcribe": "/stt/transcribe - Upload audio file for Bengali speech-to-text",
             "text_to_speech": "/tts/convert - Convert Bengali text to speech",
             "download_audio": "/tts/download/{timestamp} - Download generated speech file",
             "list_files": "/files/list - List all uploaded audio files",
             "config_api_key": "/config/api-key - Configure ElevenLabs API key",
-            "health": "/health - API health check"
+            "health": "/health - API health check",
+            # Ticketing endpoints
+            "create_ticket": "/tickets/create - Create a new ticket",
+            "voice_to_ticket": "/tickets/voice-to-ticket - Create ticket from Bengali voice",
+            "get_ticket": "/tickets/{ticket_id} - Get specific ticket",
+            "list_tickets": "/tickets - List all tickets with filters",
+            "update_ticket": "/tickets/{ticket_id} - Update ticket",
+            "delete_ticket": "/tickets/{ticket_id} - Delete ticket",
+            "ticket_stats": "/tickets/stats - Get ticket statistics",
+            "process_voice_complaint": "/process/voice-complaint - Process Bengali voice complaint",
+            "save_audio": "/save-audio - Save recorded audio file to voices folder"
         }
     }
 
@@ -297,6 +322,371 @@ async def set_api_key(api_key: str = Form(..., description="ElevenLabs API key")
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error setting API key: {str(e)}")
+
+# ============================================================================
+# TICKETING SYSTEM ENDPOINTS
+# ============================================================================
+
+@app.post("/tickets/create", response_model=TicketCreateResponse)
+async def create_ticket(
+    ticket_data: TicketCreateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new support ticket
+    """
+    try:
+        # Create new ticket
+        new_ticket = Ticket(
+            title=ticket_data.title,
+            description=ticket_data.description,
+            customer_name=ticket_data.customer_name,
+            customer_email=ticket_data.customer_email,
+            customer_phone=ticket_data.customer_phone,
+            category=TicketCategory(ticket_data.category.value),
+            priority=TicketPriority(ticket_data.priority.value),
+            status=TicketStatus.OPEN
+        )
+        
+        db.add(new_ticket)
+        db.commit()
+        db.refresh(new_ticket)
+        
+        return TicketCreateResponse(
+            success=True,
+            message=f"Ticket #{new_ticket.id} created successfully",
+            ticket=TicketResponse.from_orm(new_ticket)
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating ticket: {str(e)}")
+
+@app.post("/tickets/voice-to-ticket", response_model=VoiceProcessingResponse)
+async def create_ticket_from_voice(
+    voice_data: VoiceTicketRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a ticket from Bengali voice complaint using AI processing
+    """
+    try:
+        # Process Bengali text with Gemini AI
+        gemini = get_gemini_processor()
+        ai_analysis = gemini.process_bengali_complaint(voice_data.bengali_text)
+        
+        # Enhance the description
+        enhanced_description = gemini.enhance_ticket_description(
+            ai_analysis["english_translation"],
+            ai_analysis["key_points"]
+        )
+        
+        # Create ticket from AI analysis
+        new_ticket = Ticket(
+            title=ai_analysis["title"],
+            description=enhanced_description,
+            bengali_description=voice_data.bengali_text,
+            audio_file_path=voice_data.audio_file_path,
+            customer_name=voice_data.customer_name,
+            customer_email=voice_data.customer_email,
+            customer_phone=voice_data.customer_phone,
+            category=TicketCategory(ai_analysis["category"]),
+            priority=TicketPriority(ai_analysis["priority"]),
+            status=TicketStatus.OPEN
+        )
+        
+        db.add(new_ticket)
+        db.commit()
+        db.refresh(new_ticket)
+        
+        return VoiceProcessingResponse(
+            success=True,
+            message=f"Voice ticket #{new_ticket.id} created successfully with AI analysis",
+            bengali_text=voice_data.bengali_text,
+            english_translation=ai_analysis["english_translation"],
+            ai_analysis=ai_analysis,
+            ticket=TicketResponse.from_orm(new_ticket)
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating voice ticket: {str(e)}")
+
+@app.post("/process/voice-complaint")
+async def process_voice_complaint(
+    file: UploadFile = File(..., description="Bengali audio file"),
+    customer_name: str = Form(..., description="Customer name"),
+    customer_email: Optional[str] = Form(None, description="Customer email"),
+    customer_phone: Optional[str] = Form(None, description="Customer phone"),
+    db: Session = Depends(get_db)
+):
+    """
+    Complete voice-to-ticket pipeline: transcribe Bengali audio → AI analysis → create ticket
+    """
+    try:
+        # Step 1: Transcribe audio
+        voices_dir = "voices"
+        if not os.path.exists(voices_dir):
+            os.makedirs(voices_dir)
+        
+        timestamp = int(time.time())
+        file_extension = file.filename.split(".")[-1] if "." in file.filename else "wav"
+        saved_filename = f"complaint_audio_{timestamp}.{file_extension}"
+        saved_file_path = os.path.join(voices_dir, saved_filename)
+        
+        content = await file.read()
+        with open(saved_file_path, "wb") as f:
+            f.write(content)
+        
+        # Transcribe audio
+        stt = get_stt_client()
+        transcription_result = stt.transcribe_audio_file(saved_file_path, "bengali")
+        
+        if not transcription_result:
+            raise HTTPException(status_code=500, detail="Audio transcription failed")
+        
+        bengali_text = transcription_result.get('text', '') or transcription_result.get('transcription', '')
+        
+        if not bengali_text.strip():
+            raise HTTPException(status_code=400, detail="No speech detected in audio")
+        
+        # Step 2: Process with AI
+        gemini = get_gemini_processor()
+        ai_analysis = gemini.process_bengali_complaint(bengali_text)
+        enhanced_description = gemini.enhance_ticket_description(
+            ai_analysis["english_translation"],
+            ai_analysis["key_points"]
+        )
+        
+        # Step 3: Create ticket
+        new_ticket = Ticket(
+            title=ai_analysis["title"],
+            description=enhanced_description,
+            bengali_description=bengali_text,
+            audio_file_path=saved_file_path,
+            customer_name=customer_name,
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+            category=TicketCategory(ai_analysis["category"]),
+            priority=TicketPriority(ai_analysis["priority"]),
+            status=TicketStatus.OPEN
+        )
+        
+        db.add(new_ticket)
+        db.commit()
+        db.refresh(new_ticket)
+        
+        return {
+            "success": True,
+            "message": f"Voice complaint processed and ticket #{new_ticket.id} created",
+            "transcription": {
+                "bengali_text": bengali_text,
+                "language_code": transcription_result.get('language_code', 'unknown'),
+                "language_probability": transcription_result.get('language_probability', 0),
+                "audio_file": saved_file_path
+            },
+            "ai_analysis": ai_analysis,
+            "ticket": TicketResponse.from_orm(new_ticket)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error processing voice complaint: {str(e)}")
+
+@app.get("/tickets/{ticket_id}", response_model=TicketResponse)
+async def get_ticket(ticket_id: int, db: Session = Depends(get_db)):
+    """
+    Get a specific ticket by ID
+    """
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    return TicketResponse.from_orm(ticket)
+
+@app.get("/tickets", response_model=TicketListResponse)
+async def list_tickets(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    category: Optional[str] = None,
+    customer_name: Optional[str] = None,
+    limit: int = 10,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    List tickets with optional filters
+    """
+    query = db.query(Ticket)
+    
+    # Apply filters
+    if status:
+        query = query.filter(Ticket.status == TicketStatus(status))
+    if priority:
+        query = query.filter(Ticket.priority == TicketPriority(priority))
+    if category:
+        query = query.filter(Ticket.category == TicketCategory(category))
+    if customer_name:
+        query = query.filter(Ticket.customer_name.ilike(f"%{customer_name}%"))
+    
+    # Get total count
+    total = query.count()
+    
+    # Apply pagination and get results
+    tickets = query.offset(offset).limit(limit).all()
+    
+    return TicketListResponse(
+        tickets=[TicketResponse.from_orm(ticket) for ticket in tickets],
+        total=total,
+        limit=limit,
+        offset=offset
+    )
+
+@app.put("/tickets/{ticket_id}", response_model=TicketUpdateResponse)
+async def update_ticket(
+    ticket_id: int,
+    update_data: TicketUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Update a ticket
+    """
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    try:
+        # Update fields if provided
+        if update_data.title is not None:
+            ticket.title = update_data.title
+        if update_data.description is not None:
+            ticket.description = update_data.description
+        if update_data.status is not None:
+            ticket.status = TicketStatus(update_data.status.value)
+            if update_data.status.value == "resolved":
+                ticket.resolved_at = datetime.utcnow()
+        if update_data.priority is not None:
+            ticket.priority = TicketPriority(update_data.priority.value)
+        if update_data.category is not None:
+            ticket.category = TicketCategory(update_data.category.value)
+        if update_data.assigned_to is not None:
+            ticket.assigned_to = update_data.assigned_to
+        
+        ticket.updated_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(ticket)
+        
+        return TicketUpdateResponse(
+            success=True,
+            message=f"Ticket #{ticket_id} updated successfully",
+            ticket=TicketResponse.from_orm(ticket)
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating ticket: {str(e)}")
+
+@app.delete("/tickets/{ticket_id}", response_model=TicketDeleteResponse)
+async def delete_ticket(ticket_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a ticket
+    """
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    try:
+        db.delete(ticket)
+        db.commit()
+        
+        return TicketDeleteResponse(
+            success=True,
+            message=f"Ticket #{ticket_id} deleted successfully"
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting ticket: {str(e)}")
+
+@app.get("/tickets/stats", response_model=TicketStatsResponse)
+async def get_ticket_stats(db: Session = Depends(get_db)):
+    """
+    Get ticket statistics
+    """
+    try:
+        total_tickets = db.query(Ticket).count()
+        open_tickets = db.query(Ticket).filter(Ticket.status == TicketStatus.OPEN).count()
+        in_progress_tickets = db.query(Ticket).filter(Ticket.status == TicketStatus.IN_PROGRESS).count()
+        resolved_tickets = db.query(Ticket).filter(Ticket.status == TicketStatus.RESOLVED).count()
+        closed_tickets = db.query(Ticket).filter(Ticket.status == TicketStatus.CLOSED).count()
+        urgent_tickets = db.query(Ticket).filter(Ticket.priority == TicketPriority.URGENT).count()
+        high_priority_tickets = db.query(Ticket).filter(Ticket.priority == TicketPriority.HIGH).count()
+        
+        # Statistics by category
+        by_category = {}
+        for category in TicketCategory:
+            count = db.query(Ticket).filter(Ticket.category == category).count()
+            by_category[category.value] = count
+        
+        # Statistics by priority
+        by_priority = {}
+        for priority in TicketPriority:
+            count = db.query(Ticket).filter(Ticket.priority == priority).count()
+            by_priority[priority.value] = count
+        
+        # Statistics by status
+        by_status = {}
+        for status in TicketStatus:
+            count = db.query(Ticket).filter(Ticket.status == status).count()
+            by_status[status.value] = count
+        
+        return TicketStatsResponse(
+            total_tickets=total_tickets,
+            open_tickets=open_tickets,
+            in_progress_tickets=in_progress_tickets,
+            resolved_tickets=resolved_tickets,
+            closed_tickets=closed_tickets,
+            urgent_tickets=urgent_tickets,
+            high_priority_tickets=high_priority_tickets,
+            by_category=by_category,
+            by_priority=by_priority,
+            by_status=by_status
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting ticket stats: {str(e)}")
+
+@app.post("/save-audio")
+async def save_audio(audio: UploadFile = File(...)):
+    """Save recorded audio file to voices folder"""
+    try:
+        # Create voices directory if it doesn't exist
+        voices_dir = Path("voices")
+        voices_dir.mkdir(exist_ok=True)
+        
+        # Generate filename with timestamp
+        timestamp = int(time.time() * 1000)
+        filename = f"bengali_complaint_{timestamp}.wav"
+        filepath = voices_dir / filename
+        
+        # Save the audio file
+        with open(filepath, "wb") as buffer:
+            content = await audio.read()
+            buffer.write(content)
+        
+        return {
+            "success": True,
+            "filename": filename,
+            "filepath": str(filepath),
+            "message": "Audio file saved successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error saving audio file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error saving audio file: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
