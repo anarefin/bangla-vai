@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import time
+import re
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 from gtts import gTTS
@@ -46,12 +47,28 @@ class BengaliSTT:
                     'file': (os.path.basename(audio_file_path), audio_file, 'audio/mpeg')
                 }
                 
+                # Map language to proper language code
+                language_code_map = {
+                    'bengali': 'ben',
+                    'bengali_bd': 'ben',  # Bangladesh Bengali
+                    'bengali_in': 'ben',  # Indian Bengali
+                    'ben': 'ben'
+                }
+                
+                lang_code = language_code_map.get(language.lower(), 'ben')
+                
                 data = {
-                    'model_id': 'scribe_v1',
-                    'language_code': 'ben' if language == 'bengali' else language
+                    'model_id': 'scribe_v1',  # Use stable model instead of experimental
+                    'language_code': lang_code,  # Explicitly set Bengali language code
+                    'diarize': False,  # Disable speaker diarization for simpler output
+                    'timestamps_granularity': 'word',  # Word-level timestamps
+                    'tag_audio_events': True,  # Keep audio event tagging
+                    'temperature': 0.0  # Use lowest temperature for most deterministic results
                 }
                 
                 print(f"Uploading and transcribing '{audio_file_path}'...")
+                print(f"Using model: {data['model_id']}")
+                print(f"Language code: {data['language_code']}")
                 print("This may take a few moments...")
                 
                 # Make the API request
@@ -64,6 +81,22 @@ class BengaliSTT:
                 
                 if response.status_code == 200:
                     result = response.json()
+                    
+                    # Validate that the detected language is correct
+                    detected_lang = result.get('language_code', 'unknown')
+                    lang_probability = result.get('language_probability', 0)
+                    
+                    print(f"Detected language: {detected_lang}")
+                    print(f"Language confidence: {lang_probability:.2f}")
+                    
+                    # Check if language detection seems incorrect
+                    if detected_lang not in ['ben', 'bengali'] and lang_probability < 0.8:
+                        print(f"⚠️  Warning: Language detected as '{detected_lang}' with low confidence ({lang_probability:.2f})")
+                        print("The transcription might not be accurate. Consider:")
+                        print("1. Ensuring the audio is clear Bengali speech")
+                        print("2. Checking if the audio file is corrupted")
+                        print("3. Trying with a different audio sample")
+                    
                     return result
                 else:
                     print(f"Error: API request failed with status code {response.status_code}")
@@ -177,21 +210,43 @@ def main():
             print("TRANSCRIPTION RESULT:")
             print("="*50)
             
+            # Display language detection info
+            detected_lang = result.get('language_code', 'unknown')
+            lang_probability = result.get('language_probability', 0)
+            print(f"Detected Language: {detected_lang}")
+            print(f"Detection Confidence: {lang_probability:.2f}")
+            print("-" * 50)
+            
             # Display the transcription
             if 'text' in result:
+                print("Bengali Text:")
                 print(result['text'])
                 transcript_text = result['text']
             elif 'transcription' in result:
+                print("Bengali Text:")
                 print(result['transcription'])
                 transcript_text = result['transcription']
             else:
+                print("Raw Result:")
                 print(json.dumps(result, indent=2, ensure_ascii=False))
                 transcript_text = str(result)
             
             print("="*50)
             
+            # Check if the result looks like Bengali (contains Bengali characters)
+            bengali_pattern = r'[\u0980-\u09FF]'  # Bengali Unicode range
+            has_bengali = bool(re.search(bengali_pattern, transcript_text))
+            
+            if not has_bengali and detected_lang not in ['ben', 'bengali']:
+                print("⚠️  WARNING: The transcription does not contain Bengali characters!")
+                print(f"   Detected language: {detected_lang}")
+                print("   This suggests the audio might not be in Bengali, or there's a detection issue.")
+                print("   Please verify your audio file contains clear Bengali speech.\n")
+            elif has_bengali:
+                print("✓ Transcription contains Bengali characters - looks good!\n")
+            
             # Ask if user wants to save the result
-            save_choice = input("\nDo you want to save the transcription to a file? (y/n): ").strip().lower()
+            save_choice = input("Do you want to save the transcription to a file? (y/n): ").strip().lower()
             if save_choice in ['y', 'yes']:
                 output_filename = input("Enter output filename (default: bengali_transcription.txt): ").strip()
                 if not output_filename:
@@ -200,6 +255,11 @@ def main():
                 stt.save_transcription(result, output_filename)
         else:
             print("❌ Transcription failed. Please check your audio file and API key.")
+            print("\nTroubleshooting tips:")
+            print("1. Ensure your ElevenLabs API key is valid")
+            print("2. Check that your audio file exists and is readable")
+            print("3. Verify the audio contains clear Bengali speech")
+            print("4. Try with a different audio file")
             
     except ValueError as e:
         print(f"❌ Configuration Error: {e}")
