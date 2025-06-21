@@ -16,4 +16,9 @@ pydantic>=2.5.0
 # Additional dependencies for Streamlit interface
 pandas>=2.2.0
 plotly>=5.17.0
-email-validator>=2.1.0 
+email-validator>=2.1.0
+# New dependencies for RAG feature
+chromadb>=0.4.22
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+numpy>=1.24.0 

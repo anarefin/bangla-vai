@@ -15,9 +15,14 @@ from datetime import datetime
 import plotly.express as px
 import glob
 from pathlib import Path
+import logging
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # FastAPI base URL - adjust this based on your setup
 FASTAPI_BASE_URL = "http://localhost:8000"
@@ -55,12 +60,16 @@ def process_voice_complaint(file_bytes, filename, customer_name, customer_email=
 
 def process_voice_with_attachment(voice_file_bytes, voice_filename, attachment_file_bytes, attachment_filename, 
                                 customer_name, customer_email=None, customer_phone=None, attachment_description=""):
-    """Process voice complaint with attachment using the enhanced API endpoint"""
+    """Process voice complaint with optional attachment using the enhanced API endpoint"""
     try:
         files = {
-            "audio_file": (voice_filename, voice_file_bytes, "audio/mpeg"),
-            "attachment_file": (attachment_filename, attachment_file_bytes, "application/octet-stream")
+            "audio_file": (voice_filename, voice_file_bytes, "audio/mpeg")
         }
+        
+        # Only add attachment if it's provided
+        if attachment_file_bytes is not None and attachment_filename is not None:
+            files["attachment_file"] = (attachment_filename, attachment_file_bytes, "application/octet-stream")
+        
         data = {
             "customer_name": customer_name,
             "customer_email": customer_email,
@@ -342,6 +351,14 @@ def main():
         page_icon="🎤",
         layout="wide"
     )
+    
+    # Initialize session state variables
+    if 'show_rag_section' not in st.session_state:
+        st.session_state.show_rag_section = False
+    if 'current_ticket' not in st.session_state:
+        st.session_state.current_ticket = None
+    if 'show_rag_search' not in st.session_state:
+        st.session_state.show_rag_search = False
     
     st.title("🎤 Bangla Vai")
     st.markdown("### Powered by FastAPI, ElevenLabs Scribe API & Google TTS")
@@ -1084,13 +1101,13 @@ def main():
                                         with desc_tab1:
                                             st.markdown("**Original Bengali Complaint:**")
                                             if ticket.get('bengali_description'):
-                                                st.text_area("", value=ticket['bengali_description'], height=150, disabled=True, key="bengali_orig_upload")
+                                                st.text_area("Bengali Description", value=ticket['bengali_description'], height=150, disabled=True, key="bengali_orig_upload", label_visibility="collapsed")
                                             else:
                                                 st.info("No Bengali text available")
                                         
                                         with desc_tab2:
                                             st.markdown("**AI-Enhanced English Description:**")
-                                            st.text_area("", value=ticket['description'], height=150, disabled=True, key="english_desc_upload")
+                                            st.text_area("English Description", value=ticket['description'], height=150, disabled=True, key="english_desc_upload", label_visibility="collapsed")
                                         
                                         # Show transcription if available
                                         if result.get('transcription'):
@@ -1389,13 +1406,13 @@ def main():
                                         with desc_tab1:
                                             st.markdown("**Original Bengali Complaint:**")
                                             if ticket.get('bengali_description'):
-                                                st.text_area("", value=ticket['bengali_description'], height=150, disabled=True, key="bengali_orig_record")
+                                                st.text_area("Bengali Description", value=ticket['bengali_description'], height=150, disabled=True, key="bengali_orig_record", label_visibility="collapsed")
                                             else:
                                                 st.info("No Bengali text available")
                                         
                                         with desc_tab2:
                                             st.markdown("**AI-Enhanced English Description:**")
-                                            st.text_area("", value=ticket['description'], height=150, disabled=True, key="english_desc_record")
+                                            st.text_area("English Description", value=ticket['description'], height=150, disabled=True, key="english_desc_record", label_visibility="collapsed")
                                         
                                         # Clear the form state
                                         st.session_state.show_customer_form = False
@@ -1479,16 +1496,18 @@ def main():
                     st.session_state.voice_attachment_file = None
             
             # Show status
-            both_files_uploaded = (st.session_state.voice_attachment_audio is not None and 
-                                 st.session_state.voice_attachment_file is not None)
+            voice_uploaded = st.session_state.voice_attachment_audio is not None
+            attachment_uploaded = st.session_state.voice_attachment_file is not None
             
-            if both_files_uploaded:
-                st.success("🎉 Both files uploaded! Ready to create enhanced ticket.")
+            if voice_uploaded and attachment_uploaded:
+                st.success("🎉 Both files uploaded! Ready to create enhanced ticket with attachment analysis.")
+            elif voice_uploaded:
+                st.info("🎤 Voice file uploaded! You can create a ticket now. Attachment is optional for enhanced analysis.")
             else:
-                st.warning("⚠️ Please upload both voice file and attachment to continue.")
+                st.warning("⚠️ Please upload a voice file to continue. Attachment is optional.")
             
-            # Customer Information Section
-            if both_files_uploaded:
+            # Customer Information Section (show when voice is uploaded)
+            if voice_uploaded:
                 st.markdown("---")
                 st.subheader("👤 Customer Information")
                 st.info("📝 Please provide customer details to create the enhanced ticket:")
@@ -1512,32 +1531,38 @@ def main():
                         customer_phone = st.text_input("Phone", placeholder="+880XXXXXXXXX")
                         priority = st.selectbox("Priority", ["medium", "low", "high", "urgent"])
                     
-                    # Submit button
-                    if st.form_submit_button("🚀 **CREATE ENHANCED TICKET**", type="primary", use_container_width=True):
+                    # Submit button with dynamic text
+                    button_text = "🚀 **CREATE ENHANCED TICKET**" + (" (with attachment)" if attachment_uploaded else " (voice only)")
+                    if st.form_submit_button(button_text, type="primary", use_container_width=True):
                         if customer_name and customer_email:
-                            # Process voice + attachment
-                            with st.spinner("🤖 Processing voice + attachment with AI... This may take 30-60 seconds..."):
+                            # Process voice with optional attachment
+                            processing_text = "🤖 Processing voice" + (" + attachment" if attachment_uploaded else "") + " with AI... This may take 30-60 seconds..."
+                            with st.spinner(processing_text):
                                 try:
                                     # Get file bytes
                                     voice_file_bytes = st.session_state.voice_attachment_audio.getvalue()
-                                    attachment_file_bytes = st.session_state.voice_attachment_file.getvalue()
+                                    attachment_file_bytes = st.session_state.voice_attachment_file.getvalue() if attachment_uploaded else None
                                     
-                                    # Process with the enhanced API
+                                    # Process with the enhanced API (attachment is optional)
                                     success, result = process_voice_with_attachment(
                                         voice_file_bytes,
                                         st.session_state.voice_attachment_audio.name,
                                         attachment_file_bytes,
-                                        st.session_state.voice_attachment_file.name,
+                                        st.session_state.voice_attachment_file.name if attachment_uploaded else None,
                                         customer_name,
                                         customer_email,
                                         customer_phone,
-                                        attachment_description
+                                        attachment_description if attachment_uploaded else None
                                     )
                                     
                                     if success:
                                         ticket = result["ticket"]
+                                        has_attachment = result.get("has_attachment", False)
                                         
-                                        st.success("🎉 **Enhanced Ticket Created Successfully!**")
+                                        success_msg = "🎉 **Enhanced Ticket Created Successfully!**"
+                                        if has_attachment:
+                                            success_msg += " (with attachment analysis)"
+                                        st.success(success_msg)
                                         
                                         # Show enhanced ticket details
                                         st.markdown("### 🎫 Enhanced Ticket Details")
@@ -1641,11 +1666,15 @@ def main():
                                         
                                         # Final enhanced description
                                         st.markdown("### 📋 Final Ticket Description")
-                                        st.text_area("", value=ticket['description'], height=150, disabled=True, key="enhanced_final_desc")
+                                        st.text_area("Final Description", value=ticket['description'], height=150, disabled=True, key="enhanced_final_desc", label_visibility="collapsed")
                                         
                                         # Clear session state
                                         st.session_state.voice_attachment_audio = None
                                         st.session_state.voice_attachment_file = None
+                                        
+                                        # Store ticket info in session state for RAG search
+                                        st.session_state.current_ticket = ticket
+                                        st.session_state.show_rag_section = True
                                         
                                     else:
                                         st.error(f"❌ Error creating enhanced ticket: {result}")
@@ -1656,17 +1685,125 @@ def main():
                         else:
                             st.error("⚠️ Please provide at least customer name and email")
             
+            # RAG Search Section (Outside the form to avoid button conflicts)
+            if st.session_state.get('show_rag_section', False) and st.session_state.get('current_ticket'):
+                ticket = st.session_state.current_ticket
+                
+                st.markdown("---")
+                st.markdown("### 🔍 Find Similar Previous Tickets (RAG Search)")
+                st.info("🤖 **NEW**: Search our knowledge base of 29K+ customer support tickets to find similar issues and their resolutions!")
+                
+                # Initialize RAG search section
+                if 'show_rag_search' not in st.session_state:
+                    st.session_state.show_rag_search = False
+                
+                # Check RAG database status using ChromaDB RAG service directly
+                try:
+                    # Use session state to cache ChromaDB RAG service and avoid repeated initialization
+                    if 'rag_service' not in st.session_state:
+                        from rag_service import get_rag_service
+                        st.session_state.rag_service = get_rag_service()
+                    
+                    rag_service = st.session_state.rag_service
+                    test_results = rag_service.search_similar_tickets("test", 1)
+                    rag_db_ready = len(test_results) > 0 or rag_service.get_database_stats().get('total_tickets', 0) > 0
+                except Exception as e:
+                    logger.error(f"ChromaDB RAG service error: {e}")
+                    rag_db_ready = False
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    if st.button("🔍 **Search Similar Tickets**", type="secondary", use_container_width=True, key="rag_search_btn"):
+                        if rag_db_ready:
+                            st.session_state.show_rag_search = True
+                        else:
+                            st.error("❌ RAG database not initialized. Please run: python rag_service.py")
+                with col2:
+                    if rag_db_ready:
+                        st.success("✅ RAG DB Ready")
+                    else:
+                        st.error("❌ RAG DB Not Ready")
+                        st.info("💡 Try running: `python rag_service.py` to initialize the ChromaDB database")
+                
+                # Show RAG search interface
+                if st.session_state.show_rag_search:
+                    with st.form("rag_search_form"):
+                        st.markdown("#### 🔍 Search Query")
+                        
+                        # Default search query based on current ticket
+                        default_query = ticket.get('title', '') + ' ' + ticket.get('description', '')[:100]
+                        
+                        search_query = st.text_area(
+                            "Enter your search query (problem description, keywords, etc.)",
+                            value=default_query,
+                            height=80,
+                            help="Describe the problem or use keywords to find similar tickets"
+                        )
+                        
+                        max_results = st.slider("Maximum results", min_value=3, max_value=10, value=5)
+                        
+                        if st.form_submit_button("🔍 **SEARCH**", type="primary"):
+                            if search_query.strip():
+                                with st.spinner("🤖 Searching for similar tickets..."):
+                                    try:
+                                        # Use cached ChromaDB RAG service from session state
+                                        rag_service = st.session_state.get('rag_service')
+                                        if not rag_service:
+                                            from rag_service import get_rag_service
+                                            rag_service = get_rag_service()
+                                            st.session_state.rag_service = rag_service
+                                        
+                                        search_results = rag_service.search_similar_tickets(search_query, max_results)
+                                        
+                                        if search_results:
+                                            st.markdown("#### 📊 Similar Tickets Found")
+                                            
+                                            for i, similar_ticket in enumerate(search_results, 1):
+                                                with st.expander(f"#{i} - Ticket {similar_ticket['ticket_id']} (Similarity: {similar_ticket['similarity_score']:.1%})"):
+                                                    col1, col2 = st.columns([2, 1])
+                                                    
+                                                    with col1:
+                                                        st.markdown(f"**Subject:** {similar_ticket['subject']}")
+                                                        st.markdown(f"**Description:** {similar_ticket['description']}")
+                                                        if similar_ticket['resolution']:
+                                                            st.markdown(f"**Resolution:** {similar_ticket['resolution']}")
+                                                    
+                                                    with col2:
+                                                        st.metric("Similarity", f"{similar_ticket['similarity_score']:.1%}")
+                                                        st.info(f"**Type:** {similar_ticket['ticket_type']}")
+                                                        st.info(f"**Product:** {similar_ticket['product']}")
+                                                        st.info(f"**Status:** {similar_ticket['status']}")
+                                                        st.info(f"**Priority:** {similar_ticket['priority']}")
+                                                        # Fix: Check if customer_satisfaction is valid and not 'unknown'
+                                                        satisfaction = similar_ticket.get('customer_satisfaction', '')
+                                                        if satisfaction and satisfaction != 'unknown' and satisfaction.strip():
+                                                            st.metric("Satisfaction", satisfaction)
+                                        else:
+                                            st.warning("No similar tickets found. Try adjusting your search query.")
+                                            
+                                    except Exception as e:
+                                        st.error(f"❌ Error searching tickets: {str(e)}")
+                                        st.info("💡 Try running: `python rag_service.py` to initialize the ChromaDB database")
+                            else:
+                                st.warning("Please enter a search query")
+            
             # Instructions
             st.markdown("---")
-            st.markdown("### 📋 How to use Voice + Attachment:")
+            st.markdown("### 📋 How to use Enhanced Voice Ticketing:")
             st.markdown("""
-            1. 📁 Upload your Bengali audio file (complaint)
-            2. 📎 Upload an attachment (screenshot, document, etc.)
-            3. 📝 Describe the attachment (optional but recommended)
+            1. 📁 Upload your Bengali audio file (complaint) - **Required**
+            2. 📎 Upload an attachment (screenshot, document, etc.) - **Optional**
+            3. 📝 Describe the attachment (optional but recommended if you upload one)
             4. 👤 Fill in customer information
             5. 🚀 Click "CREATE ENHANCED TICKET"
             6. ⏳ Wait 30-60 seconds for AI analysis
-            7. 📊 Review the comprehensive analysis with voice-attachment correlation
+            7. 📊 Review the comprehensive analysis
+            8. 🔍 Use RAG search to find similar previous tickets and solutions
+            
+            **NEW Features:**
+            - ✅ **Attachment is now optional** - create tickets with voice only
+            - 🤖 **RAG Search** - find similar tickets from 29K+ knowledge base
+            - 🔄 **Smart correlation** - attachment analysis when provided
             
             **Supported attachment types:**
             - 🖼️ Images: PNG, JPG, JPEG, GIF

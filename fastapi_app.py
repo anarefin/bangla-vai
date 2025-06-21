@@ -5,7 +5,7 @@ import os
 import tempfile
 import time
 import json
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from bengali_stt import BengaliSTT, BengaliTTS
 from dotenv import load_dotenv
 import aiofiles
@@ -21,6 +21,10 @@ from intelligent_ticket_processor import get_intelligent_processor
 from datetime import datetime
 from pathlib import Path
 import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -757,7 +761,7 @@ async def save_audio(audio: UploadFile = File(...)):
 @app.post("/process/voice-with-attachment")
 async def process_voice_with_attachment(
     audio_file: UploadFile = File(..., description="Bengali audio file"),
-    attachment_file: UploadFile = File(..., description="Attachment file (screenshot, document, etc.)"),
+    attachment_file: Optional[UploadFile] = File(None, description="Attachment file (screenshot, document, etc.) - OPTIONAL"),
     customer_name: str = Form(..., description="Customer name"),
     customer_email: Optional[str] = Form(None, description="Customer email"),
     customer_phone: Optional[str] = Form(None, description="Customer phone"),
@@ -765,7 +769,9 @@ async def process_voice_with_attachment(
     db: Session = Depends(get_db)
 ):
     """
-    Complete voice + attachment pipeline: transcribe Bengali audio → analyze attachment → combined AI analysis → create enhanced ticket
+    Enhanced voice processing pipeline: transcribe Bengali audio → optionally analyze attachment → combined AI analysis → create enhanced ticket
+    
+    Attachment is now OPTIONAL - you can process voice complaints without attachments
     """
     try:
         # Create directories
@@ -798,35 +804,46 @@ async def process_voice_with_attachment(
         if not bengali_text.strip():
             raise HTTPException(status_code=400, detail="No speech detected in audio")
         
-        # Step 2: Save attachment file
-        attachment_extension = attachment_file.filename.split(".")[-1] if "." in attachment_file.filename else "jpg"
-        attachment_filename = f"attachment_{timestamp}.{attachment_extension}"
-        attachment_path = os.path.join(attachments_dir, attachment_filename)
-        
-        attachment_content = await attachment_file.read()
-        with open(attachment_path, "wb") as f:
-            f.write(attachment_content)
-        
-        # Step 3: Process Bengali text with Gemini
+        # Step 2: Process Bengali text with Gemini
         gemini = get_gemini_processor()
         voice_analysis = gemini.process_bengali_complaint(bengali_text)
         
-        # Step 4: Analyze attachment with voice context
-        combined_analysis = gemini.analyze_attachment_with_voice(
-            attachment_content, attachment_file.filename, bengali_text, voice_analysis
-        )
+        # Step 3: Optionally analyze attachment if provided
+        attachment_path = None
+        attachment_filename = None
+        combined_analysis = None
         
-        # Step 5: Create enhanced ticket with combined analysis
-        enhanced_ticket_info = combined_analysis.get("enhanced_ticket", {})
+        if attachment_file is not None:
+            # Save attachment file
+            attachment_extension = attachment_file.filename.split(".")[-1] if "." in attachment_file.filename else "jpg"
+            attachment_filename = f"attachment_{timestamp}.{attachment_extension}"
+            attachment_path = os.path.join(attachments_dir, attachment_filename)
+            
+            attachment_content = await attachment_file.read()
+            with open(attachment_path, "wb") as f:
+                f.write(attachment_content)
+            
+            # Analyze attachment with voice context
+            combined_analysis = gemini.analyze_attachment_with_voice(
+                attachment_content, attachment_file.filename, bengali_text, voice_analysis
+            )
         
-        # Use enhanced information or fall back to voice analysis
-        final_title = enhanced_ticket_info.get("title", voice_analysis.get("title", "Voice + Attachment Complaint"))
-        final_description = enhanced_ticket_info.get("description", voice_analysis.get("english_translation", ""))
+        # Step 4: Create enhanced ticket with analysis (attachment analysis if available)
+        if combined_analysis:
+            enhanced_ticket_info = combined_analysis.get("enhanced_ticket", {})
+            # Use enhanced information from attachment analysis
+            final_title = enhanced_ticket_info.get("title", voice_analysis.get("title", "Voice Complaint with Attachment"))
+            final_description = enhanced_ticket_info.get("description", voice_analysis.get("english_translation", ""))
+            raw_category = enhanced_ticket_info.get("category", voice_analysis.get("category", "general"))
+            raw_priority = enhanced_ticket_info.get("priority", voice_analysis.get("priority", "medium"))
+        else:
+            # Use voice analysis only
+            final_title = voice_analysis.get("title", "Voice Complaint")
+            final_description = voice_analysis.get("english_translation", "")
+            raw_category = voice_analysis.get("category", "general")
+            raw_priority = voice_analysis.get("priority", "medium")
         
         # Map AI-generated categories to valid enum values
-        raw_category = enhanced_ticket_info.get("category", voice_analysis.get("category", "general"))
-        raw_priority = enhanced_ticket_info.get("priority", voice_analysis.get("priority", "medium"))
-        
         final_category = gemini._map_category_to_enum(raw_category)
         final_priority = gemini._map_priority_to_enum(raw_priority)
         
@@ -836,8 +853,8 @@ async def process_voice_with_attachment(
             description=final_description,
             bengali_description=bengali_text,
             audio_file_path=audio_path,
-            attachment_file_path=attachment_path,
-            attachment_analysis=json.dumps(combined_analysis, ensure_ascii=False),
+            attachment_file_path=attachment_path,  # Will be None if no attachment
+            attachment_analysis=json.dumps(combined_analysis, ensure_ascii=False) if combined_analysis else None,
             customer_name=customer_name,
             customer_email=customer_email,
             customer_phone=customer_phone,
@@ -850,34 +867,149 @@ async def process_voice_with_attachment(
         db.commit()
         db.refresh(new_ticket)
         
-        return {
+        # Prepare response based on whether attachment was provided
+        response_data = {
             "success": True,
-            "message": f"Voice + attachment complaint processed and ticket #{new_ticket.id} created",
+            "message": f"Voice complaint processed and ticket #{new_ticket.id} created" + (" with attachment analysis" if attachment_file else ""),
             "bengali_text": bengali_text,
             "english_translation": voice_analysis.get("english_translation", ""),
-            "attachment_analysis": combined_analysis.get("attachment_analysis", {}),
-            "voice_image_correlation": combined_analysis.get("voice_image_correlation", {}),
-            "technical_assessment": combined_analysis.get("technical_assessment", {}),
-            "combined_ai_analysis": combined_analysis,
             "transcription_details": {
                 "language_code": transcription_result.get('language_code', 'unknown'),
                 "language_probability": transcription_result.get('language_probability', 0),
                 "audio_file": audio_path
             },
-            "attachment_details": {
-                "filename": attachment_file.filename,
-                "saved_as": attachment_filename,
-                "file_path": attachment_path,
-                "description": attachment_description
-            },
-            "ticket": TicketResponse.from_orm(new_ticket)
+            "ticket": TicketResponse.from_orm(new_ticket),
+            "has_attachment": attachment_file is not None
         }
+        
+        # Add attachment-related data only if attachment was provided
+        if attachment_file is not None and combined_analysis:
+            response_data.update({
+                "attachment_analysis": combined_analysis.get("attachment_analysis", {}),
+                "voice_image_correlation": combined_analysis.get("voice_image_correlation", {}),
+                "technical_assessment": combined_analysis.get("technical_assessment", {}),
+                "combined_ai_analysis": combined_analysis,
+                "attachment_details": {
+                    "filename": attachment_file.filename,
+                    "saved_as": attachment_filename,
+                    "file_path": attachment_path,
+                    "description": attachment_description
+                }
+            })
+        
+        return response_data
         
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error processing voice + attachment complaint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing voice complaint: {str(e)}")
+
+@app.post("/rag/search")
+async def search_similar_tickets(
+    query: str = Form(..., description="Search query to find similar tickets"),
+    max_results: int = Form(5, description="Maximum number of results to return"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    RAG-based search: Find similar tickets from the knowledge base using vector similarity
+    """
+    try:
+        # Validate inputs
+        if not query or not query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+        # Limit max_results to prevent abuse
+        max_results = max(1, min(max_results, 20))
+        
+        logger.info(f"RAG search request: query='{query[:50]}...', max_results={max_results}")
+        
+        # Use singleton ChromaDB RAG service
+        from rag_service import get_rag_service
+        rag_service = get_rag_service()
+        
+        # Perform the search
+        results = rag_service.search_similar_tickets(query.strip(), max_results)
+        
+        logger.info(f"RAG search completed: found {len(results)} results")
+        
+        return {
+            "success": True,
+            "query": query.strip(),
+            "results": results,
+            "total_results": len(results),
+            "database_stats": rag_service.get_database_stats()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RAG search error: {str(e)}")
+        logger.error(f"Query was: '{query}', max_results: {max_results}")
+        raise HTTPException(status_code=500, detail=f"Error in RAG search: {str(e)}")
+
+@app.post("/rag/initialize")
+async def initialize_rag_database() -> Dict[str, Any]:
+    """
+    Initialize the RAG database with customer support tickets from CSV
+    """
+    try:
+        logger.info("RAG database initialization requested")
+        
+        # Use singleton ChromaDB RAG service
+        from rag_service import get_rag_service
+        rag_service = get_rag_service()
+        count = rag_service.initialize_database()
+        
+        logger.info(f"RAG database initialized with {count} tickets")
+        
+        return {
+            "success": True,
+            "message": f"RAG database initialized with {count} tickets",
+            "tickets_loaded": count,
+            "database_stats": rag_service.get_database_stats()
+        }
+        
+    except Exception as e:
+        logger.error(f"RAG initialization error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error initializing RAG database: {str(e)}")
+
+@app.get("/rag/status")
+async def get_rag_status() -> Dict[str, Any]:
+    """
+    Get RAG database status and statistics
+    """
+    try:
+        from rag_service import get_rag_service
+        
+        # Check if ChromaDB directory exists
+        chroma_db_path = "./chroma_db"
+        if not os.path.exists(chroma_db_path):
+            return {
+                "success": False,
+                "status": "not_initialized", 
+                "message": "ChromaDB directory not found. Please initialize first.",
+                "database_path": chroma_db_path
+            }
+        
+        # Get database stats using singleton ChromaDB service
+        rag_service = get_rag_service()
+        stats = rag_service.get_database_stats()
+        
+        return {
+            "success": True,
+            "status": "ready",
+            "stats": stats,
+            "database_path": chroma_db_path
+        }
+        
+    except Exception as e:
+        logger.error(f"RAG status error: {str(e)}")
+        return {
+            "success": False,
+            "status": "error",
+            "error": str(e)
+        }
 
 if __name__ == "__main__":
     import uvicorn

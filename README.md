@@ -1,4 +1,4 @@
-# 🎫 Bangla Vai - Advanced Voice & Attachment Ticketing System
+# 🎫 Bengali Voice based Ticket Creator (POC)
 
 A comprehensive Bengali voice-to-ticket support system that converts Bengali speech complaints and supporting attachments into structured support tickets using advanced AI and natural language processing.
 
@@ -31,11 +31,10 @@ A comprehensive Bengali voice-to-ticket support system that converts Bengali spe
 - **Voice-Attachment Linking**: Direct connection between audio files, attachments, and tickets
 - **Customer Management**: Complete customer contact and history tracking
 
-### 📊 Analytics & Management Dashboard
-- **Interactive Visualizations**: Charts, graphs, and metrics using Plotly
-- **Ticket Trends**: Historical analysis and trend identification
-- **Performance Metrics**: Resolution time, customer satisfaction tracking
-- **Export Capabilities**: CSV export for reporting and analysis
+### 🔍 Contextual Similarity Search (RAG)
+- **Vector Similarity Search**: Retrieve historical tickets similar to a new complaint using SentenceTransformer embeddings
+- **ChromaDB Backend**: Persistent local vector database powered by FAISS for fast cosine search
+- **Instant Suggestions**: Surface related past resolutions inside the Streamlit UI to accelerate support
 
 ## 🛠️ Technology Stack
 
@@ -46,6 +45,7 @@ A comprehensive Bengali voice-to-ticket support system that converts Bengali spe
 - **Document Processing**: Gemini Vision API (handles raw bytes directly)
 - **Visualization**: Plotly, Pandas, Streamlit components
 - **Audio Processing**: HTML5 MediaRecorder, Pydub
+- **Vector Database / RAG**: ChromaDB, SentenceTransformers, FAISS
 - **File Handling**: Python multipart, aiofiles
 
 ## 🚀 Quick Start Guide
@@ -95,6 +95,18 @@ ATTACHMENTS_DIR=./attachments
 # Create database tables and initial data
 python database.py
 ```
+
+### 3b. (Optional) Initialize RAG Vector Database
+
+Build the similarity-search index from the sample `customer_support_tickets.csv` file (≈100 MB on disk):
+
+```bash
+python initialize_rag_db.py
+# Or, once the FastAPI server is running:
+# curl -X POST http://localhost:8000/rag/initialize
+```
+
+If you skip this step, the RAG feature in Streamlit will stay disabled until initialization is performed.
 
 ### 4. Start the Complete System
 
@@ -190,6 +202,11 @@ streamlit run streamlit_app.py --server.port 8501
 - `POST /upload/attachment` - Upload attachment files
 - `GET /files/{filename}` - Download stored files
 
+### RAG – Similarity Search
+- `POST /rag/search` - Retrieve tickets similar to a query
+- `POST /rag/initialize` - Build or rebuild the vector database from CSV
+- `GET /rag/status` - View current RAG database statistics
+
 ## 🧠 Intelligent Processing System
 
 ### Hard-coded POC Values
@@ -279,19 +296,15 @@ CREATE TABLE tickets (
 ## 🧪 Testing & Quality Assurance
 
 ### Test Files Available
-- `test_intelligent_processing.py` - Test intelligent ticket processing
-- `test_voice_attachment_feature.py` - Test voice + attachment functionality
+- `test_intelligent_processing.py` - Unit tests for the intelligent extraction logic
 
 ### Running Tests
 ```bash
 # Test intelligent processing
 python test_intelligent_processing.py
 
-# Test voice attachment feature
-python test_voice_attachment_feature.py
-
-# Test API endpoints
-pytest  # If pytest is installed
+# Run the full test suite (if pytest is installed)
+pytest
 ```
 
 ## 📈 Performance & Scalability
@@ -338,7 +351,6 @@ bangla-vai/
 ├── 📁 attachments/              # Attachment files storage
 ├── 📄 fastapi_app.py           # FastAPI backend server
 ├── 📄 streamlit_app.py         # Main Streamlit interface
-├── 📄 streamlit_ticketing_app.py # Alternative ticketing interface
 ├── 📄 start_app.py             # One-command startup script
 ├── 📄 bengali_stt.py           # Bengali speech-to-text processing
 ├── 📄 gemini_service.py        # Gemini AI service integration
@@ -350,25 +362,13 @@ bangla-vai/
 ├── 📄 tickets.db               # SQLite database file
 ├── 📄 README.md                # This documentation file
 ├── 📄 VOICE_ATTACHMENT_FEATURE.md # Voice + attachment feature docs
-├── 📄 INTELLIGENT_PROCESSING.md   # Intelligent processing docs
+├── 📄 rag_service.py           # Retrieval-Augmented (RAG) vector search service
+├── 📄 initialize_rag_db.py     # Utility to build the ChromaDB index
+├── 📁 chroma_db/               # Persistent ChromaDB storage
 └── 📄 test_*.py                # Test files
 ```
 
-## 🔄 Development Workflow
 
-### Adding New Features
-1. **Update Database Schema**: Modify `models.py` and `database.py`
-2. **Add API Endpoints**: Extend `fastapi_app.py`
-3. **Update UI**: Modify `streamlit_app.py`
-4. **Add Tests**: Create test files in project root
-5. **Update Documentation**: Update this README
-
-### Contributing Guidelines
-- Follow Python PEP 8 style guidelines
-- Add type hints for all functions
-- Include comprehensive error handling
-- Write tests for new features
-- Update documentation with changes
 
 ## 📞 Support & Troubleshooting
 
