@@ -65,6 +65,8 @@ class TicketResponse(BaseModel):
     description: str
     bengali_description: Optional[str] = None
     audio_file_path: Optional[str] = None
+    attachment_file_path: Optional[str] = None
+    attachment_analysis: Optional[str] = None
     status: TicketStatusEnum
     priority: TicketPriorityEnum
     category: TicketCategoryEnum
@@ -144,4 +146,29 @@ class BengaliProcessingResult(BaseModel):
     priority: str
     key_points: List[str]
     sentiment: str
-    urgency_indicators: List[str] 
+    urgency_indicators: List[str]
+
+class VoiceWithAttachmentRequest(BaseModel):
+    customer_name: str = Field(..., min_length=1, max_length=100, description="Customer name")
+    customer_email: Optional[EmailStr] = Field(None, description="Customer email address")
+    customer_phone: Optional[str] = Field(None, max_length=20, description="Customer phone number")
+    bengali_text: Optional[str] = Field(None, description="Bengali complaint text from voice (optional if audio provided)")
+    audio_file_path: Optional[str] = Field(None, description="Path to the audio file")
+    attachment_description: Optional[str] = Field(None, description="Description of what the attachment contains")
+
+class VoiceWithAttachmentResponse(BaseModel):
+    success: bool
+    message: str
+    bengali_text: Optional[str] = None
+    english_translation: Optional[str] = None
+    attachment_analysis: Optional[dict] = None
+    combined_ai_analysis: dict
+    ticket: Optional[TicketResponse] = None
+
+class AttachmentAnalysisResult(BaseModel):
+    attachment_type: str
+    content_description: str
+    extracted_text: Optional[str] = None
+    technical_details: Optional[dict] = None
+    relevance_to_complaint: str
+    suggested_actions: List[str] 

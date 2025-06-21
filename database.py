@@ -48,6 +48,8 @@ class Ticket(Base):
     description = Column(Text, nullable=False)
     bengali_description = Column(Text, nullable=True)  # Original Bengali text
     audio_file_path = Column(String(500), nullable=True)  # Path to voice recording
+    attachment_file_path = Column(String(500), nullable=True)  # Path to attachment file (screenshot, document, etc.)
+    attachment_analysis = Column(Text, nullable=True)  # JSON string of attachment analysis results
     status = Column(Enum(TicketStatus), default=TicketStatus.OPEN)
     priority = Column(Enum(TicketPriority), default=TicketPriority.MEDIUM)
     category = Column(Enum(TicketCategory), default=TicketCategory.GENERAL)

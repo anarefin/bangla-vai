@@ -53,6 +53,35 @@ def process_voice_complaint(file_bytes, filename, customer_name, customer_email=
     except Exception as e:
         return False, f"Error: {str(e)}"
 
+def process_voice_with_attachment(voice_file_bytes, voice_filename, attachment_file_bytes, attachment_filename, 
+                                customer_name, customer_email=None, customer_phone=None, attachment_description=""):
+    """Process voice complaint with attachment using the enhanced API endpoint"""
+    try:
+        files = {
+            "audio_file": (voice_filename, voice_file_bytes, "audio/mpeg"),
+            "attachment_file": (attachment_filename, attachment_file_bytes, "application/octet-stream")
+        }
+        data = {
+            "customer_name": customer_name,
+            "customer_email": customer_email,
+            "customer_phone": customer_phone,
+            "attachment_description": attachment_description
+        }
+        
+        response = requests.post(
+            f"{FASTAPI_BASE_URL}/process/voice-with-attachment",
+            files=files,
+            data=data,
+            timeout=180  # Longer timeout for AI processing
+        )
+        
+        if response.status_code == 200:
+            return True, response.json()
+        else:
+            return False, response.json().get("detail", "Unknown error")
+    except Exception as e:
+        return False, f"Error: {str(e)}"
+
 def get_tickets(status=None, priority=None, category=None, limit=50):
     try:
         params = {"limit": limit}
@@ -941,8 +970,8 @@ def main():
         if 'uploaded_audio_file' not in st.session_state:
             st.session_state.uploaded_audio_file = None
         
-        # Create two options: File Upload (Primary) and Live Recording (Secondary)
-        upload_tab, record_tab = st.tabs(["📁 Upload Audio File", "🎙️ Live Recording"])
+        # Create three options: File Upload, Live Recording, and Voice + Attachment
+        upload_tab, record_tab, voice_attachment_tab = st.tabs(["📁 Upload Audio File", "🎙️ Live Recording", "🎤📎 Voice + Attachment"])
         
         # Tab 4.1: File Upload (Primary Method)
         with upload_tab:
@@ -1393,6 +1422,256 @@ def main():
                         st.session_state.ticket_created_recording = False
                         st.success("🔄 Cleared! You can now record a new complaint.")
                         st.rerun()
+        
+        # Tab 4.3: Voice + Attachment (Enhanced Method)
+        with voice_attachment_tab:
+            st.subheader("🎤📎 Voice + Attachment Enhanced Ticketing")
+            st.info("🚀 **NEW FEATURE**: Upload voice complaint PLUS attachment (screenshot, document, etc.) for more accurate AI analysis!")
+            
+            # Initialize session state for voice + attachment feature
+            if 'voice_attachment_audio' not in st.session_state:
+                st.session_state.voice_attachment_audio = None
+            if 'voice_attachment_file' not in st.session_state:
+                st.session_state.voice_attachment_file = None
+                
+            # File Upload Section
+            st.markdown("### 📁 Upload Files")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 🎤 Bengali Voice File")
+                voice_file = st.file_uploader(
+                    "Choose Bengali audio file",
+                    type=['wav', 'mp3', 'ogg', 'm4a', 'webm'],
+                    help="Your Bengali voice complaint",
+                    key="voice_attachment_audio_uploader"
+                )
+                
+                if voice_file is not None:
+                    st.success(f"✅ Voice: {voice_file.name}")
+                    st.audio(voice_file, format=f"audio/{voice_file.type.split('/')[-1]}")
+                    st.session_state.voice_attachment_audio = voice_file
+                else:
+                    st.session_state.voice_attachment_audio = None
+            
+            with col2:
+                st.markdown("#### 📎 Attachment File")
+                attachment_file = st.file_uploader(
+                    "Choose attachment file",
+                    type=['png', 'jpg', 'jpeg', 'gif', 'pdf', 'doc', 'docx', 'txt'],
+                    help="Screenshot, document, or any relevant file",
+                    key="voice_attachment_file_uploader"
+                )
+                
+                if attachment_file is not None:
+                    st.success(f"✅ Attachment: {attachment_file.name}")
+                    
+                    # Show preview if it's an image
+                    if attachment_file.type.startswith('image/'):
+                        st.image(attachment_file, caption="Attachment Preview", use_column_width=True)
+                    else:
+                        st.info(f"📄 File type: {attachment_file.type}")
+                        st.info(f"📊 File size: {attachment_file.size / 1024:.1f} KB")
+                    
+                    st.session_state.voice_attachment_file = attachment_file
+                else:
+                    st.session_state.voice_attachment_file = None
+            
+            # Show status
+            both_files_uploaded = (st.session_state.voice_attachment_audio is not None and 
+                                 st.session_state.voice_attachment_file is not None)
+            
+            if both_files_uploaded:
+                st.success("🎉 Both files uploaded! Ready to create enhanced ticket.")
+            else:
+                st.warning("⚠️ Please upload both voice file and attachment to continue.")
+            
+            # Customer Information Section
+            if both_files_uploaded:
+                st.markdown("---")
+                st.subheader("👤 Customer Information")
+                st.info("📝 Please provide customer details to create the enhanced ticket:")
+                
+                # Optional attachment description
+                attachment_description = st.text_area(
+                    "📝 Describe your attachment (optional but recommended)",
+                    placeholder="e.g., 'Screenshot of error message', 'Invoice copy', 'System log file'...",
+                    height=80,
+                    key="attachment_description_input"
+                )
+                
+                with st.form("voice_attachment_customer_form"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        customer_name = st.text_input("Customer Name *", placeholder="Enter customer's full name")
+                        customer_email = st.text_input("Email *", placeholder="customer@example.com")
+                    
+                    with col2:
+                        customer_phone = st.text_input("Phone", placeholder="+880XXXXXXXXX")
+                        priority = st.selectbox("Priority", ["medium", "low", "high", "urgent"])
+                    
+                    # Submit button
+                    if st.form_submit_button("🚀 **CREATE ENHANCED TICKET**", type="primary", use_container_width=True):
+                        if customer_name and customer_email:
+                            # Process voice + attachment
+                            with st.spinner("🤖 Processing voice + attachment with AI... This may take 30-60 seconds..."):
+                                try:
+                                    # Get file bytes
+                                    voice_file_bytes = st.session_state.voice_attachment_audio.getvalue()
+                                    attachment_file_bytes = st.session_state.voice_attachment_file.getvalue()
+                                    
+                                    # Process with the enhanced API
+                                    success, result = process_voice_with_attachment(
+                                        voice_file_bytes,
+                                        st.session_state.voice_attachment_audio.name,
+                                        attachment_file_bytes,
+                                        st.session_state.voice_attachment_file.name,
+                                        customer_name,
+                                        customer_email,
+                                        customer_phone,
+                                        attachment_description
+                                    )
+                                    
+                                    if success:
+                                        ticket = result["ticket"]
+                                        
+                                        st.success("🎉 **Enhanced Ticket Created Successfully!**")
+                                        
+                                        # Show enhanced ticket details
+                                        st.markdown("### 🎫 Enhanced Ticket Details")
+                                        
+                                        # Metrics row
+                                        col1, col2, col3 = st.columns(3)
+                                        with col1:
+                                            st.metric("Ticket ID", f"#{ticket['id']}")
+                                        with col2:
+                                            st.metric("Priority", ticket['priority'].upper())
+                                        with col3:
+                                            st.metric("Category", ticket['category'].replace('_', ' ').title())
+                                        
+                                        st.markdown("**Enhanced Title:**")
+                                        st.info(ticket['title'])
+                                        
+                                        # Enhanced Analysis Tabs
+                                        analysis_tab1, analysis_tab2, analysis_tab3, analysis_tab4 = st.tabs([
+                                            "🎤 Voice Analysis", 
+                                            "📎 Attachment Analysis", 
+                                            "🔗 Combined Analysis",
+                                            "🔧 Technical Assessment"
+                                        ])
+                                        
+                                        with analysis_tab1:
+                                            st.markdown("#### 🎤 Voice Transcription & Analysis")
+                                            if result.get('bengali_text'):
+                                                st.text_area("Bengali Voice Text", 
+                                                            value=result['bengali_text'], 
+                                                            height=100, disabled=True, 
+                                                            key="enhanced_bengali_text")
+                                            if result.get('english_translation'):
+                                                st.text_area("English Translation", 
+                                                            value=result['english_translation'], 
+                                                            height=100, disabled=True,
+                                                            key="enhanced_english_translation")
+                                        
+                                        with analysis_tab2:
+                                            st.markdown("#### 📎 Attachment Analysis")
+                                            attachment_analysis = result.get('attachment_analysis', {})
+                                            
+                                            if attachment_analysis:
+                                                st.info(f"**Type:** {attachment_analysis.get('type', 'Unknown')}")
+                                                st.text_area("Content Description", 
+                                                            value=attachment_analysis.get('content_description', 'No description'), 
+                                                            height=80, disabled=True,
+                                                            key="attachment_content_desc")
+                                                
+                                                if attachment_analysis.get('extracted_text'):
+                                                    st.text_area("Extracted Text", 
+                                                                value=attachment_analysis['extracted_text'], 
+                                                                height=80, disabled=True,
+                                                                key="attachment_extracted_text")
+                                                
+                                                if attachment_analysis.get('key_visual_elements'):
+                                                    st.write("**Key Visual Elements:**")
+                                                    for element in attachment_analysis['key_visual_elements']:
+                                                        st.write(f"• {element}")
+                                        
+                                        with analysis_tab3:
+                                            st.markdown("#### 🔗 Voice-Attachment Correlation")
+                                            correlation = result.get('voice_image_correlation', {})
+                                            
+                                            if correlation:
+                                                st.text_area("Relationship Analysis", 
+                                                            value=correlation.get('relationship', 'No analysis'), 
+                                                            height=80, disabled=True,
+                                                            key="correlation_relationship")
+                                                st.text_area("Consistency Check", 
+                                                            value=correlation.get('consistency', 'No analysis'), 
+                                                            height=60, disabled=True,
+                                                            key="correlation_consistency")
+                                                st.text_area("Additional Context", 
+                                                            value=correlation.get('additional_context', 'No analysis'), 
+                                                            height=80, disabled=True,
+                                                            key="correlation_context")
+                                        
+                                        with analysis_tab4:
+                                            st.markdown("#### 🔧 Technical Assessment")
+                                            tech_assessment = result.get('technical_assessment', {})
+                                            
+                                            if tech_assessment:
+                                                is_technical = tech_assessment.get('is_technical_issue', False)
+                                                st.info(f"**Technical Issue:** {'Yes' if is_technical else 'No'}")
+                                                
+                                                if tech_assessment.get('error_codes'):
+                                                    st.write("**Error Codes Found:**")
+                                                    for code in tech_assessment['error_codes']:
+                                                        st.write(f"• {code}")
+                                                
+                                                if tech_assessment.get('system_state'):
+                                                    st.text_area("System State", 
+                                                                value=tech_assessment['system_state'], 
+                                                                height=60, disabled=True,
+                                                                key="tech_system_state")
+                                                
+                                                if tech_assessment.get('troubleshooting_steps'):
+                                                    st.write("**Recommended Steps:**")
+                                                    for i, step in enumerate(tech_assessment['troubleshooting_steps'], 1):
+                                                        st.write(f"{i}. {step}")
+                                        
+                                        # Final enhanced description
+                                        st.markdown("### 📋 Final Ticket Description")
+                                        st.text_area("", value=ticket['description'], height=150, disabled=True, key="enhanced_final_desc")
+                                        
+                                        # Clear session state
+                                        st.session_state.voice_attachment_audio = None
+                                        st.session_state.voice_attachment_file = None
+                                        
+                                    else:
+                                        st.error(f"❌ Error creating enhanced ticket: {result}")
+                                        
+                                except Exception as e:
+                                    st.error(f"❌ Error processing voice + attachment: {str(e)}")
+                                    st.write("**Debug Info:**", str(e))
+                        else:
+                            st.error("⚠️ Please provide at least customer name and email")
+            
+            # Instructions
+            st.markdown("---")
+            st.markdown("### 📋 How to use Voice + Attachment:")
+            st.markdown("""
+            1. 📁 Upload your Bengali audio file (complaint)
+            2. 📎 Upload an attachment (screenshot, document, etc.)
+            3. 📝 Describe the attachment (optional but recommended)
+            4. 👤 Fill in customer information
+            5. 🚀 Click "CREATE ENHANCED TICKET"
+            6. ⏳ Wait 30-60 seconds for AI analysis
+            7. 📊 Review the comprehensive analysis with voice-attachment correlation
+            
+            **Supported attachment types:**
+            - 🖼️ Images: PNG, JPG, JPEG, GIF
+            - 📄 Documents: PDF, DOC, DOCX, TXT
+            """)
 
     # Footer
     st.markdown("---")

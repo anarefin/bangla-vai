@@ -78,7 +78,8 @@ async def root():
             "delete_ticket": "/tickets/{ticket_id} - Delete ticket",
             "ticket_stats": "/tickets/stats - Get ticket statistics",
             "process_voice_complaint": "/process/voice-complaint - Process Bengali voice complaint",
-            "save_audio": "/save-audio - Save recorded audio file to voices folder"
+            "save_audio": "/save-audio - Save recorded audio file to voices folder",
+            "process_voice_with_attachment": "/process/voice-with-attachment - Process voice complaint with attachment"
         }
     }
 
@@ -752,6 +753,131 @@ async def save_audio(audio: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error saving audio file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error saving audio file: {str(e)}")
+
+@app.post("/process/voice-with-attachment")
+async def process_voice_with_attachment(
+    audio_file: UploadFile = File(..., description="Bengali audio file"),
+    attachment_file: UploadFile = File(..., description="Attachment file (screenshot, document, etc.)"),
+    customer_name: str = Form(..., description="Customer name"),
+    customer_email: Optional[str] = Form(None, description="Customer email"),
+    customer_phone: Optional[str] = Form(None, description="Customer phone"),
+    attachment_description: Optional[str] = Form(None, description="Description of what the attachment contains"),
+    db: Session = Depends(get_db)
+):
+    """
+    Complete voice + attachment pipeline: transcribe Bengali audio → analyze attachment → combined AI analysis → create enhanced ticket
+    """
+    try:
+        # Create directories
+        voices_dir = "voices"
+        attachments_dir = "attachments"
+        for directory in [voices_dir, attachments_dir]:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+        
+        timestamp = int(time.time())
+        
+        # Step 1: Save and transcribe audio file
+        audio_extension = audio_file.filename.split(".")[-1] if "." in audio_file.filename else "wav"
+        audio_filename = f"complaint_audio_{timestamp}.{audio_extension}"
+        audio_path = os.path.join(voices_dir, audio_filename)
+        
+        audio_content = await audio_file.read()
+        with open(audio_path, "wb") as f:
+            f.write(audio_content)
+        
+        # Transcribe audio
+        stt = get_stt_client()
+        transcription_result = stt.transcribe_audio_file(audio_path, "bengali")
+        
+        if not transcription_result:
+            raise HTTPException(status_code=500, detail="Audio transcription failed")
+        
+        bengali_text = transcription_result.get('text', '') or transcription_result.get('transcription', '')
+        
+        if not bengali_text.strip():
+            raise HTTPException(status_code=400, detail="No speech detected in audio")
+        
+        # Step 2: Save attachment file
+        attachment_extension = attachment_file.filename.split(".")[-1] if "." in attachment_file.filename else "jpg"
+        attachment_filename = f"attachment_{timestamp}.{attachment_extension}"
+        attachment_path = os.path.join(attachments_dir, attachment_filename)
+        
+        attachment_content = await attachment_file.read()
+        with open(attachment_path, "wb") as f:
+            f.write(attachment_content)
+        
+        # Step 3: Process Bengali text with Gemini
+        gemini = get_gemini_processor()
+        voice_analysis = gemini.process_bengali_complaint(bengali_text)
+        
+        # Step 4: Analyze attachment with voice context
+        combined_analysis = gemini.analyze_attachment_with_voice(
+            attachment_content, attachment_file.filename, bengali_text, voice_analysis
+        )
+        
+        # Step 5: Create enhanced ticket with combined analysis
+        enhanced_ticket_info = combined_analysis.get("enhanced_ticket", {})
+        
+        # Use enhanced information or fall back to voice analysis
+        final_title = enhanced_ticket_info.get("title", voice_analysis.get("title", "Voice + Attachment Complaint"))
+        final_description = enhanced_ticket_info.get("description", voice_analysis.get("english_translation", ""))
+        
+        # Map AI-generated categories to valid enum values
+        raw_category = enhanced_ticket_info.get("category", voice_analysis.get("category", "general"))
+        raw_priority = enhanced_ticket_info.get("priority", voice_analysis.get("priority", "medium"))
+        
+        final_category = gemini._map_category_to_enum(raw_category)
+        final_priority = gemini._map_priority_to_enum(raw_priority)
+        
+        # Create the ticket
+        new_ticket = Ticket(
+            title=final_title,
+            description=final_description,
+            bengali_description=bengali_text,
+            audio_file_path=audio_path,
+            attachment_file_path=attachment_path,
+            attachment_analysis=json.dumps(combined_analysis, ensure_ascii=False),
+            customer_name=customer_name,
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+            category=TicketCategory(final_category),
+            priority=TicketPriority(final_priority),
+            status=TicketStatus.OPEN
+        )
+        
+        db.add(new_ticket)
+        db.commit()
+        db.refresh(new_ticket)
+        
+        return {
+            "success": True,
+            "message": f"Voice + attachment complaint processed and ticket #{new_ticket.id} created",
+            "bengali_text": bengali_text,
+            "english_translation": voice_analysis.get("english_translation", ""),
+            "attachment_analysis": combined_analysis.get("attachment_analysis", {}),
+            "voice_image_correlation": combined_analysis.get("voice_image_correlation", {}),
+            "technical_assessment": combined_analysis.get("technical_assessment", {}),
+            "combined_ai_analysis": combined_analysis,
+            "transcription_details": {
+                "language_code": transcription_result.get('language_code', 'unknown'),
+                "language_probability": transcription_result.get('language_probability', 0),
+                "audio_file": audio_path
+            },
+            "attachment_details": {
+                "filename": attachment_file.filename,
+                "saved_as": attachment_filename,
+                "file_path": attachment_path,
+                "description": attachment_description
+            },
+            "ticket": TicketResponse.from_orm(new_ticket)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error processing voice + attachment complaint: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
