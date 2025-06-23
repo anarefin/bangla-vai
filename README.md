@@ -93,7 +93,7 @@ ATTACHMENTS_DIR=./attachments
 
 ```bash
 # Create database tables and initial data
-python database.py
+python -c "from src.bangla_vai.core.database import create_tables; create_tables()"
 ```
 
 ### 3b. (Optional) Initialize RAG Vector Database
@@ -101,7 +101,7 @@ python database.py
 Build the similarity-search index from the sample `customer_support_tickets.csv` file (≈100 MB on disk):
 
 ```bash
-python initialize_rag_db.py
+python scripts/initialize_rag_db.py
 # Or, once the FastAPI server is running:
 # curl -X POST http://localhost:8000/rag/initialize
 ```
@@ -113,7 +113,7 @@ If you skip this step, the RAG feature in Streamlit will stay disabled until ini
 **🎯 One-Command Startup (Recommended):**
 ```bash
 # Start both FastAPI backend and Streamlit frontend
-python start_app.py
+python scripts/start_app.py
 ```
 
 This will:
@@ -125,10 +125,10 @@ This will:
 **Alternative Manual Startup:**
 ```bash
 # Terminal 1: FastAPI Backend
-python -m uvicorn fastapi_app:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn src.bangla_vai.api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2: Streamlit Frontend
-streamlit run streamlit_app.py --server.port 8501
+streamlit run src/bangla_vai/ui/app.py --server.port 8501
 ```
 
 ### 5. Access the Application
